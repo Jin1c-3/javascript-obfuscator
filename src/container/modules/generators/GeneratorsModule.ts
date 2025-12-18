@@ -8,6 +8,7 @@ import { IdentifierNamesGenerator } from '../../../enums/generators/identifier-n
 
 import { DictionaryIdentifierNamesGenerator } from '../../../generators/identifier-names-generators/DictionaryIdentifierNamesGenerator';
 import { HexadecimalIdentifierNamesGenerator } from '../../../generators/identifier-names-generators/HexadecimalIdentifierNamesGenerator';
+import { KeepOriginalIdentifierNamesGenerator } from '../../../generators/identifier-names-generators/KeepOriginalIdentifierNamesGenerator';
 import { MangledIdentifierNamesGenerator } from '../../../generators/identifier-names-generators/MangledIdentifierNamesGenerator';
 import { MangledShuffledIdentifierNamesGenerator } from '../../../generators/identifier-names-generators/MangledShuffledIdentifierNamesGenerator';
 
@@ -22,6 +23,11 @@ export const generatorsModule: interfaces.ContainerModule = new ContainerModule(
         .to(HexadecimalIdentifierNamesGenerator)
         .inSingletonScope()
         .whenTargetNamed(IdentifierNamesGenerator.HexadecimalIdentifierNamesGenerator);
+
+    bind<IIdentifierNamesGenerator>(ServiceIdentifiers.IIdentifierNamesGenerator)
+        .to(KeepOriginalIdentifierNamesGenerator)
+        .inSingletonScope()
+        .whenTargetNamed(IdentifierNamesGenerator.KeepOriginalIdentifierNamesGenerator);
 
     bind<IIdentifierNamesGenerator>(ServiceIdentifiers.IIdentifierNamesGenerator)
         .to(MangledIdentifierNamesGenerator)
@@ -52,6 +58,14 @@ export const generatorsModule: interfaces.ContainerModule = new ContainerModule(
                         identifierNamesGenerator = context.container.getNamed<IIdentifierNamesGenerator>(
                             ServiceIdentifiers.IIdentifierNamesGenerator,
                             IdentifierNamesGenerator.DictionaryIdentifierNamesGenerator
+                        );
+
+                        break;
+
+                    case IdentifierNamesGenerator.KeepOriginalIdentifierNamesGenerator:
+                        identifierNamesGenerator = context.container.getNamed<IIdentifierNamesGenerator>(
+                            ServiceIdentifiers.IIdentifierNamesGenerator,
+                            IdentifierNamesGenerator.KeepOriginalIdentifierNamesGenerator
                         );
 
                         break;

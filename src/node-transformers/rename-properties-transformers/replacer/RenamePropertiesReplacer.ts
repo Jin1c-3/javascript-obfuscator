@@ -11,6 +11,8 @@ import { IOptions } from '../../../interfaces/options/IOptions';
 import { IPropertyIdentifierNamesCacheStorage } from '../../../interfaces/storages/identifier-names-cache/IPropertyIdentifierNamesCacheStorage';
 import { IRenamePropertiesReplacer } from '../../../interfaces/node-transformers/rename-properties-transformers/replacer/IRenamePropertiesReplacer';
 
+import { IdentifierNamesGenerator } from '../../../enums/generators/identifier-names-generators/IdentifierNamesGenerator';
+
 // eslint-disable-next-line import/no-internal-modules
 import ReservedDomProperties from '../../../constants/ReservedDomProperties.json';
 
@@ -104,6 +106,11 @@ export class RenamePropertiesReplacer implements IRenamePropertiesReplacer {
         if (this.isReservedName(propertyName)) {
             this.identifierNamesGenerator.preserveName(propertyName);
 
+            return propertyName;
+        }
+
+        // In keep-original mode, use the original property name
+        if (this.options.identifierNamesGenerator === IdentifierNamesGenerator.KeepOriginalIdentifierNamesGenerator) {
             return propertyName;
         }
 

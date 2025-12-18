@@ -11,6 +11,8 @@ import { IIdentifierNamesGenerator } from '../../../interfaces/generators/identi
 import { IIdentifierReplacer } from '../../../interfaces/node-transformers/rename-identifiers-transformers/replacer/IIdentifierReplacer';
 import { IOptions } from '../../../interfaces/options/IOptions';
 
+import { IdentifierNamesGenerator } from '../../../enums/generators/identifier-names-generators/IdentifierNamesGenerator';
+
 import { NodeFactory } from '../../../node/NodeFactory';
 
 @injectable()
@@ -66,7 +68,10 @@ export class IdentifierReplacer implements IIdentifierReplacer {
             return;
         }
 
-        const newIdentifierName: string = this.identifierNamesGenerator.generateForGlobalScope();
+        // In keep-original mode, use the original name
+        const newIdentifierName: string = this.options.identifierNamesGenerator === IdentifierNamesGenerator.KeepOriginalIdentifierNamesGenerator
+            ? identifierName
+            : this.identifierNamesGenerator.generateForGlobalScope();
 
         const namesMap: Map<string, string> = this.blockScopesMap.get(lexicalScopeNode) ?? new Map();
 
@@ -93,7 +98,11 @@ export class IdentifierReplacer implements IIdentifierReplacer {
             return;
         }
 
-        const newIdentifierName: string = this.identifierNamesGenerator.generateForLexicalScope(lexicalScopeNode);
+        // In keep-original mode, use the original name
+        const newIdentifierName: string = this.options.identifierNamesGenerator === IdentifierNamesGenerator.KeepOriginalIdentifierNamesGenerator
+            ? identifierName
+            : this.identifierNamesGenerator.generateForLexicalScope(lexicalScopeNode);
+
         const namesMap: Map<string, string> | null = this.blockScopesMap.get(lexicalScopeNode) ?? new Map();
 
         namesMap.set(identifierName, newIdentifierName);

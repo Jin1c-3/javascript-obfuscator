@@ -163,6 +163,7 @@ export class Options implements IOptions {
     @IsIn([
         IdentifierNamesGenerator.DictionaryIdentifierNamesGenerator,
         IdentifierNamesGenerator.HexadecimalIdentifierNamesGenerator,
+        IdentifierNamesGenerator.KeepOriginalIdentifierNamesGenerator,
         IdentifierNamesGenerator.MangledIdentifierNamesGenerator,
         IdentifierNamesGenerator.MangledShuffledIdentifierNamesGenerator
     ])

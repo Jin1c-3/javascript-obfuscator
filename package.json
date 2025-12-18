@@ -1,5 +1,5 @@
 {
-  "name": "javascript-obfuscator",
+  "name": "@jin1c-3/javascript-obfuscator",
   "version": "5.1.0",
   "description": "JavaScript obfuscator",
   "keywords": [
@@ -96,19 +96,19 @@
     "ts-node": "10.9.2",
     "typescript": "5.9.3",
     "webpack": "5.102.1",
-    "webpack-cli": "6.0.1",
+    "webpack-cli": "^6.0.1",
     "webpack-node-externals": "3.0.0"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/javascript-obfuscator/javascript-obfuscator.git"
+    "url": "git+https://github.com/jin1-3/javascript-obfuscator.git"
   },
   "homepage": "https://obfuscator.io/",
   "scripts": {
     "start": "yarn run watch",
     "webpack:prod": "webpack --config ./webpack/webpack.node.config.js --config ./webpack/webpack.browser.config.js --mode production",
     "build": "yarn run webpack:prod && yarn run eslint",
-    "build:typings": "rm -rf ./typings && tsc --project src/tsconfig.typings.json",
+    "build:typings": "rimraf ./typings && tsc --project src/tsconfig.typings.json",
     "watch": "webpack --config ./webpack/webpack.node.config.js --mode development --watch",
     "test:dev": "ts-node --type-check test/dev/dev.ts",
     "test:devCompilePerformance": "ts-node test/dev/dev-compile-performance.ts",
