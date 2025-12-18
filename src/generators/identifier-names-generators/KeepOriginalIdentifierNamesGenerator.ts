@@ -78,13 +78,14 @@ export class KeepOriginalIdentifierNamesGenerator extends AbstractIdentifierName
     }
 
     /**
-     * For labels, use the label itself as the original name
+     * For internal labels (like control flow storage keys), generate a random name
+     * This is not for user-defined labels, but for internal use
      *
      * @param {string} label
      * @param {number} nameLength
      * @returns {string}
      */
     public generateForLabel(label: string, nameLength?: number): string {
-        return label;
+        return this.generateNext(nameLength);
     }
 }
