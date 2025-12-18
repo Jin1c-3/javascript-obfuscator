@@ -59,5 +59,6 @@ export const NO_ADDITIONAL_NODES_PRESET: TInputOptions = Object.freeze({
     stringArrayThreshold: 0,
     target: ObfuscationTarget.Browser,
     transformObjectKeys: false,
+    propertyBracketing: true,
     unicodeEscapeSequence: false
 });

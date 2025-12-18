@@ -62,5 +62,6 @@ export interface IOptions {
     readonly stringArrayThreshold: number;
     readonly target: TTypeFromEnum<typeof ObfuscationTarget>;
     readonly transformObjectKeys: boolean;
+    readonly propertyBracketing: boolean;
     readonly unicodeEscapeSequence: boolean;
 }

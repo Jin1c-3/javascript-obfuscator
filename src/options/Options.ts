@@ -432,6 +432,12 @@ export class Options implements IOptions {
      * @type {boolean}
      */
     @IsBoolean()
+    public readonly propertyBracketing!: boolean;
+
+    /**
+     * @type {boolean}
+     */
+    @IsBoolean()
     public readonly unicodeEscapeSequence!: boolean;
 
     /**

@@ -64,6 +64,10 @@ export class MemberExpressionTransformer extends AbstractNodeTransformer {
      * @returns {NodeGuards}
      */
     public transformNode(memberExpressionNode: ESTree.MemberExpression, parentNode: ESTree.Node): ESTree.Node {
+        if (!this.options.propertyBracketing) {
+            return memberExpressionNode;
+        }
+
         if (
             NodeMetadata.isIgnoredNode(memberExpressionNode.object) ||
             NodeMetadata.isIgnoredNode(memberExpressionNode.property)

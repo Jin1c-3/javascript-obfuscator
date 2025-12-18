@@ -386,6 +386,11 @@ export class JavaScriptObfuscatorCLI implements IInitializable {
             )
             .option('--transform-object-keys <boolean>', 'Enables transformation of object keys', BooleanSanitizer)
             .option(
+                '--property-bracketing <boolean>',
+                'Enables converting dot notation to bracket notation for member expressions',
+                BooleanSanitizer
+            )
+            .option(
                 '--unicode-escape-sequence <boolean>',
                 'Allows to enable/disable string conversion to unicode escape sequence',
                 BooleanSanitizer
