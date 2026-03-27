@@ -1092,13 +1092,13 @@ describe('ObjectExpressionKeysTransformer', () => {
             });
 
             describe('Variant #2: without block statement', () => {
+                // Object should NOT be transformed when inside loop without block statement
+                // to prevent all iterations sharing the same object reference (issue #1300)
                 const match: string =
                     `` +
                     `var ${variableMatch};` +
-                    `var ${variableMatch} *= *{};` +
-                    `${variableMatch}\\['bar'] *= *'bar';` +
                     `for *\\(var ${variableMatch} *= *0x0; *${variableMatch} *< *0xa; *${variableMatch}\\+\\+\\) *` +
-                    `${variableMatch} *= *${variableMatch};` +
+                    `${variableMatch} *= *\\{'bar': *'bar'\\};` +
                     ``;
                 const regExp: RegExp = new RegExp(match);
 
@@ -1151,13 +1151,13 @@ describe('ObjectExpressionKeysTransformer', () => {
             });
 
             describe('Variant #2: without block statement', () => {
+                // Object should NOT be transformed when inside loop without block statement
+                // to prevent all iterations sharing the same object reference (issue #1300)
                 const match: string =
                     `` +
                     `var ${variableMatch} *= *{};` +
-                    `var ${variableMatch} *= *{};` +
-                    `${variableMatch}\\['bar'] *= *'bar';` +
                     `for *\\(var ${variableMatch} in *${variableMatch}\\) *` +
-                    `${variableMatch} *= *${variableMatch};` +
+                    `${variableMatch} *= *\\{'bar': *'bar'\\};` +
                     ``;
                 const regExp: RegExp = new RegExp(match);
 
@@ -1210,13 +1210,13 @@ describe('ObjectExpressionKeysTransformer', () => {
             });
 
             describe('Variant #2: without block statement', () => {
+                // Object should NOT be transformed when inside loop without block statement
+                // to prevent all iterations sharing the same object reference (issue #1300)
                 const match: string =
                     `` +
                     `var ${variableMatch} *= *\\[];` +
-                    `var ${variableMatch} *= *{};` +
-                    `${variableMatch}\\['bar'] *= *'bar';` +
                     `for *\\(var ${variableMatch} of *${variableMatch}\\) *` +
-                    `${variableMatch} *= *${variableMatch};` +
+                    `${variableMatch} *= *\\{'bar': *'bar'\\};` +
                     ``;
                 const regExp: RegExp = new RegExp(match);
 
@@ -1268,13 +1268,13 @@ describe('ObjectExpressionKeysTransformer', () => {
             });
 
             describe('Variant #2: without block statement', () => {
+                // Object should NOT be transformed when inside loop without block statement
+                // to prevent all iterations sharing the same object reference (issue #1300)
                 const match: string =
                     `` +
                     `var ${variableMatch};` +
-                    `var ${variableMatch} *= *{};` +
-                    `${variableMatch}\\['bar'] *= *'bar';` +
                     `while *\\(!!\\[]\\)` +
-                    `${variableMatch} *= *${variableMatch};` +
+                    `${variableMatch} *= *\\{'bar': *'bar'\\};` +
                     ``;
                 const regExp: RegExp = new RegExp(match);
 
@@ -2100,7 +2100,67 @@ describe('ObjectExpressionKeysTransformer', () => {
             });
         });
 
-        describe('Variant #16: conditional expression `this` reference', () => {
+        describe('Variant #16: return statement sequence expression with side effects', () => {
+            let testFunc: () => void;
+
+            before(() => {
+                const code: string = readFileAsString(
+                    __dirname + '/fixtures/return-statement-sequence-expression-side-effect.js'
+                );
+
+                testFunc = () => {
+                    const obfuscatedCode: string = JavaScriptObfuscator.obfuscate(code, {
+                        ...NO_ADDITIONAL_NODES_PRESET,
+                        transformObjectKeys: true
+                    }).getObfuscatedCode();
+
+                    const result = eval(`${obfuscatedCode} compErr(5);`);
+
+                    if (result.min !== 5) {
+                        throw new Error(
+                            `Expected min to be 5, got ${result.min}. ` +
+                                `Object extraction changed evaluation order in sequence expression.`
+                        );
+                    }
+                };
+            });
+
+            it('should not change evaluation order when extracting object keys from sequence expression', () => {
+                assert.doesNotThrow(testFunc);
+            });
+        });
+
+        describe('Variant #17: return statement sequence expression with nested assignment and side effects', () => {
+            let testFunc: () => void;
+
+            before(() => {
+                const code: string = readFileAsString(
+                    __dirname + '/fixtures/return-statement-sequence-expression-nested-assignment-side-effect.js'
+                );
+
+                testFunc = () => {
+                    const obfuscatedCode: string = JavaScriptObfuscator.obfuscate(code, {
+                        ...NO_ADDITIONAL_NODES_PRESET,
+                        transformObjectKeys: true
+                    }).getObfuscatedCode();
+
+                    const result = eval(`${obfuscatedCode} test();`);
+
+                    if (result.foo !== 42) {
+                        throw new Error(
+                            `Expected foo to be 42, got ${result.foo}. ` +
+                                `Object extraction changed evaluation order in nested sequence expression.`
+                        );
+                    }
+                };
+            });
+
+            it('should not change evaluation order when extracting object keys from nested assignment in sequence expression', () => {
+                assert.doesNotThrow(testFunc);
+            });
+        });
+
+        describe('Variant #18: conditional expression `this` reference', () => {
             describe('Variant #1: conditional expression identifier reference', () => {
                 const match: string =
                     `` +

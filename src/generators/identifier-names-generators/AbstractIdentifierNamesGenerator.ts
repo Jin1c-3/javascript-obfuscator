@@ -12,6 +12,11 @@ import { NodeGuards } from '../../node/NodeGuards';
 @injectable()
 export abstract class AbstractIdentifierNamesGenerator implements IIdentifierNamesGenerator {
     /**
+     * @type {number}
+     */
+    private static readonly maxGenerationAttempts: number = 10000;
+
+    /**
      * @type {IOptions}
      */
     protected readonly options: IOptions;
@@ -30,6 +35,11 @@ export abstract class AbstractIdentifierNamesGenerator implements IIdentifierNam
      * @type {WeakMap<TNodeWithLexicalScope, Set<string>>}
      */
     protected readonly lexicalScopesPreservedNamesMap: WeakMap<TNodeWithLexicalScope, Set<string>> = new WeakMap();
+
+    /**
+     * @type {Set<string>}
+     */
+    protected readonly allLexicalScopePreservedNames: Set<string> = new Set();
 
     /**
      * @param {IRandomGenerator} randomGenerator
@@ -72,6 +82,8 @@ export abstract class AbstractIdentifierNamesGenerator implements IIdentifierNam
         preservedNamesForLexicalScopeSet.add(name);
 
         this.lexicalScopesPreservedNamesMap.set(lexicalScopeNode, preservedNamesForLexicalScopeSet);
+
+        this.allLexicalScopePreservedNames.add(name);
     }
 
     /**
@@ -109,6 +121,36 @@ export abstract class AbstractIdentifierNamesGenerator implements IIdentifierNam
     }
 
     /**
+     * Checks if the name is valid and not preserved in any scope (global or lexical).
+     * This is used for global scope name generation to avoid conflicts with
+     * variables in any lexical scope that might shadow the global variable.
+     *
+     * @param {string} name
+     * @returns {boolean}
+     */
+    public isValidIdentifierNameInAllScopes(name: string): boolean {
+        if (!this.isValidIdentifierName(name)) {
+            return false;
+        }
+
+        // Check if the name is preserved in any lexical scope
+        return !this.allLexicalScopePreservedNames.has(name);
+    }
+
+    /**
+     * @param {number} attempts
+     */
+    protected checkGenerationAttempts(attempts: number): void {
+        if (attempts > AbstractIdentifierNamesGenerator.maxGenerationAttempts) {
+            throw new Error(
+                'Unable to generate a valid identifier name. ' +
+                    'This is likely caused by `reservedNames` patterns that match all generated names. ' +
+                    'Please check your `reservedNames` option.'
+            );
+        }
+    }
+
+    /**
      * @param {string} name
      * @returns {boolean}
      */
@@ -125,6 +167,12 @@ export abstract class AbstractIdentifierNamesGenerator implements IIdentifierNam
      * @returns {string}
      */
     public abstract generateForGlobalScope(nameLength?: number): string;
+
+    /**
+     * @param {number} nameLength
+     * @returns {string}
+     */
+    public abstract generateForGlobalScopeWithAllScopesValidation(nameLength?: number): string;
 
     /**
      * @param {TNodeWithLexicalScope} lexicalScopeNode

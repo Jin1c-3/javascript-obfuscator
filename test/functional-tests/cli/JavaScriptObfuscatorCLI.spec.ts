@@ -1,5 +1,4 @@
 import * as fs from 'fs';
-import * as mkdirp from 'mkdirp';
 import * as path from 'path';
 import * as rimraf from 'rimraf';
 import * as sinon from 'sinon';
@@ -12,6 +11,7 @@ import { ISourceMap } from '../../../src/interfaces/source-code/ISourceMap';
 import { StdoutWriteMock } from '../../mocks/StdoutWriteMock';
 
 import { JavaScriptObfuscatorCLI } from '../../../src/JavaScriptObfuscatorCLIFacade';
+import { ProApiClient } from '../../../src/pro-api/ProApiClient';
 import { parseSourceMapFromObfuscatedCode } from '../../helpers/parseSourceMapFromObfuscatedCode';
 
 describe('JavaScriptObfuscatorCLI', function (): void {
@@ -30,8 +30,8 @@ describe('JavaScriptObfuscatorCLI', function (): void {
     const configFilePath: string = path.join(configDirName, configFileName);
 
     describe('run', () => {
-        before(() => {
-            mkdirp.sync(outputDirName);
+        before(async () => {
+            fs.mkdirSync(outputDirName, { recursive: true });
         });
 
         describe('Variant #1: obfuscation of single file', () => {
@@ -39,8 +39,8 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                 describe('Variant #1: input file path is before options', () => {
                     let isFileExist: boolean;
 
-                    before(() => {
-                        JavaScriptObfuscatorCLI.obfuscate([
+                    before(async () => {
+                        await JavaScriptObfuscatorCLI.obfuscate([
                             'node',
                             'javascript-obfuscator',
                             fixtureFilePath,
@@ -67,8 +67,8 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                 describe('Variant #2: input file path is after options', () => {
                     let isFileExist: boolean;
 
-                    before(() => {
-                        JavaScriptObfuscatorCLI.obfuscate([
+                    before(async () => {
+                        await JavaScriptObfuscatorCLI.obfuscate([
                             'node',
                             'javascript-obfuscator',
                             '--output',
@@ -97,10 +97,10 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                 describe('Variant #1: default behaviour', () => {
                     let outputFixturesFilePath: string, isFileExist: boolean;
 
-                    before(() => {
+                    before(async () => {
                         outputFixturesFilePath = path.join(fixturesDirName, outputFileName);
 
-                        JavaScriptObfuscatorCLI.obfuscate(['node', 'javascript-obfuscator', fixtureFilePath]);
+                        await JavaScriptObfuscatorCLI.obfuscate(['node', 'javascript-obfuscator', fixtureFilePath]);
 
                         isFileExist = fs.existsSync(outputFixturesFilePath);
                     });
@@ -115,19 +115,17 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                 });
 
                 describe('Variant #2: invalid input file path', () => {
-                    let testFunc: () => void;
-
-                    before(() => {
-                        testFunc = () =>
-                            JavaScriptObfuscatorCLI.obfuscate([
+                    it(`should throw an error`, async () => {
+                        try {
+                            await await JavaScriptObfuscatorCLI.obfuscate([
                                 'node',
                                 'javascript-obfuscator',
                                 path.join('wrong', 'file', 'path')
                             ]);
-                    });
-
-                    it(`should throw an error`, () => {
-                        assert.throws(testFunc, expectedError);
+                            assert.fail('Expected error was not thrown');
+                        } catch (error) {
+                            assert.match((error as Error).message, expectedError);
+                        }
                     });
                 });
 
@@ -136,17 +134,17 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                     const outputFileName: string = 'sample-obfuscated.ts';
                     const outputFilePath: string = path.join(outputDirName, outputFileName);
 
-                    let testFunc: () => void;
-
-                    before(() => {
+                    before(async () => {
                         fs.writeFileSync(outputFilePath, 'data');
-
-                        testFunc = () =>
-                            JavaScriptObfuscatorCLI.obfuscate(['node', 'javascript-obfuscator', outputFilePath]);
                     });
 
-                    it(`should throw an error`, () => {
-                        assert.throws(testFunc, expectedError);
+                    it(`should throw an error`, async () => {
+                        try {
+                            await await JavaScriptObfuscatorCLI.obfuscate(['node', 'javascript-obfuscator', outputFilePath]);
+                            assert.fail('Expected error was not thrown');
+                        } catch (error) {
+                            assert.match((error as Error).message, expectedError);
+                        }
                     });
 
                     after(() => {
@@ -159,8 +157,8 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                 describe('Variant #1: --exclude option is pointed on different file', () => {
                     let isFileExist: boolean;
 
-                    before(() => {
-                        JavaScriptObfuscatorCLI.obfuscate([
+                    before(async () => {
+                        await await JavaScriptObfuscatorCLI.obfuscate([
                             'node',
                             'javascript-obfuscator',
                             fixtureFilePath,
@@ -179,11 +177,9 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                 });
 
                 describe('Variant #2: --exclude option is pointed on input file', () => {
-                    let testFunc: () => void;
-
-                    before(() => {
-                        testFunc = () =>
-                            JavaScriptObfuscatorCLI.obfuscate([
+                    it('should throw an error', async () => {
+                        try {
+                            await await JavaScriptObfuscatorCLI.obfuscate([
                                 'node',
                                 'javascript-obfuscator',
                                 fixtureFilePath,
@@ -192,14 +188,10 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                                 '--exclude',
                                 path.join('**', 'sample.js')
                             ]);
-                    });
-
-                    it('should throw an error', () => {
-                        assert.throws(testFunc, expectedError);
-                    });
-
-                    after(() => {
-                        fs.unlinkSync(outputFilePath);
+                            assert.fail('Expected error was not thrown');
+                        } catch (error) {
+                            assert.match((error as Error).message, expectedError);
+                        }
                     });
                 });
             });
@@ -224,12 +216,12 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                     fileContent1: string,
                     fileContent2: string;
 
-                before(() => {
+                before(async () => {
                     outputFixturesFilePath1 = path.join(directoryPath, outputFileName1);
                     outputFixturesFilePath2 = path.join(directoryPath, outputFileName2);
                     outputFixturesFilePath3 = path.join(directoryPath, outputFileName3);
 
-                    JavaScriptObfuscatorCLI.obfuscate([
+                    await await JavaScriptObfuscatorCLI.obfuscate([
                         'node',
                         'javascript-obfuscator',
                         directoryPath,
@@ -287,11 +279,11 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                     fileContent1: string,
                     fileContent2: string;
 
-                before(() => {
+                before(async () => {
                     outputFixturesFilePath1 = path.join(directoryPath, outputFileName1);
                     outputFixturesFilePath2 = path.join(directoryPath, outputFileName2);
 
-                    JavaScriptObfuscatorCLI.obfuscate([
+                    await JavaScriptObfuscatorCLI.obfuscate([
                         'node',
                         'javascript-obfuscator',
                         directoryPath,
@@ -345,12 +337,12 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                     isFileExist2: boolean,
                     isFileExist3: boolean;
 
-                before(() => {
+                before(async () => {
                     outputFixturesFilePath1 = path.join(outputDirectoryPath, outputFileName1);
                     outputFixturesFilePath2 = path.join(outputDirectoryPath, outputFileName2);
                     outputFixturesFilePath3 = path.join(outputDirectoryPath, outputFileName3);
 
-                    JavaScriptObfuscatorCLI.obfuscate([
+                    await JavaScriptObfuscatorCLI.obfuscate([
                         'node',
                         'javascript-obfuscator',
                         directoryPath,
@@ -411,12 +403,12 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                         fileContent1: string,
                         fileContent2: string;
 
-                    before(() => {
+                    before(async () => {
                         outputFixturesFilePath1 = path.join(directoryPath, outputFileName1);
                         outputFixturesFilePath2 = path.join(directoryPath, outputFileName2);
                         outputFixturesFilePath3 = path.join(directoryPath, outputFileName3);
 
-                        JavaScriptObfuscatorCLI.obfuscate([
+                        await JavaScriptObfuscatorCLI.obfuscate([
                             'node',
                             'javascript-obfuscator',
                             directoryPath,
@@ -476,12 +468,12 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                         isFileExist3: boolean,
                         fileContent1: string;
 
-                    before(() => {
+                    before(async () => {
                         outputFixturesFilePath1 = path.join(directoryPath, outputFileName1);
                         outputFixturesFilePath2 = path.join(directoryPath, outputFileName2);
                         outputFixturesFilePath3 = path.join(directoryPath, outputFileName3);
 
-                        JavaScriptObfuscatorCLI.obfuscate([
+                        await JavaScriptObfuscatorCLI.obfuscate([
                             'node',
                             'javascript-obfuscator',
                             directoryPath,
@@ -532,8 +524,8 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                         sourceCodeContent: string,
                         sourceMapObject: ISourceMap;
 
-                    before((done) => {
-                        JavaScriptObfuscatorCLI.obfuscate([
+                    before(async () => {
+                        await JavaScriptObfuscatorCLI.obfuscate([
                             'node',
                             'javascript-obfuscator',
                             fixtureFilePath,
@@ -554,10 +546,12 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                             isFileExist = true;
                             sourceMapObject = JSON.parse(sourceMapContent);
 
+                            await new Promise<void>((resolve) => {
                             resolveSources(sourceMapObject, fixtureFilePath, fs.readFile, (error, result) => {
                                 resolvedSources =
                                     typeof result.sourcesContent[0] === 'string' ? result.sourcesContent[0] : '';
-                                done();
+                                resolve();
+                            });
                             });
                         } catch (e) {
                             isFileExist = false;
@@ -592,8 +586,8 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                         sourceCodeContent: string,
                         sourceMapObject: ISourceMap;
 
-                    before((done) => {
-                        JavaScriptObfuscatorCLI.obfuscate([
+                    before(async () => {
+                        await JavaScriptObfuscatorCLI.obfuscate([
                             'node',
                             'javascript-obfuscator',
                             fixtureFilePath,
@@ -616,10 +610,12 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                             isFileExist = true;
                             sourceMapObject = JSON.parse(sourceMapContent);
 
+                            await new Promise<void>((resolve) => {
                             resolveSources(sourceMapObject, fixtureFilePath, fs.readFile, (error, result) => {
                                 resolvedSources =
                                     typeof result.sourcesContent[0] === 'string' ? result.sourcesContent[0] : '';
-                                done();
+                                resolve();
+                            });
                             });
                         } catch (e) {
                             isFileExist = false;
@@ -658,8 +654,8 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                         sourceCodeContent: string,
                         sourceMapObject: ISourceMap;
 
-                    before((done) => {
-                        JavaScriptObfuscatorCLI.obfuscate([
+                    before(async () => {
+                        await JavaScriptObfuscatorCLI.obfuscate([
                             'node',
                             'javascript-obfuscator',
                             fixtureFilePath,
@@ -684,10 +680,12 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                             isFileExist = true;
                             sourceMapObject = JSON.parse(sourceMapContent);
 
+                            await new Promise<void>((resolve) => {
                             resolveSources(sourceMapObject, fixtureFilePath, fs.readFile, (error, result) => {
                                 resolvedSources =
                                     typeof result.sourcesContent[0] === 'string' ? result.sourcesContent[0] : '';
-                                done();
+                                resolve();
+                            });
                             });
                         } catch (e) {
                             isFileExist = false;
@@ -725,8 +723,8 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                             sourceCodeContent: string,
                             sourceMapObject: ISourceMap;
 
-                        before((done) => {
-                            JavaScriptObfuscatorCLI.obfuscate([
+                        before(async () => {
+                            await JavaScriptObfuscatorCLI.obfuscate([
                                 'node',
                                 'javascript-obfuscator',
                                 fixtureFilePath,
@@ -751,10 +749,12 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                                 isFileExist = true;
                                 sourceMapObject = JSON.parse(sourceMapContent);
 
-                                resolveSources(sourceMapObject, fixtureFilePath, fs.readFile, (error, result) => {
+                                await new Promise<void>((resolve) => {
+                            resolveSources(sourceMapObject, fixtureFilePath, fs.readFile, (error, result) => {
                                     resolvedSources =
                                         typeof result.sourcesContent[0] === 'string' ? result.sourcesContent[0] : '';
-                                    done();
+                                    resolve();
+                                });
                                 });
                             } catch (e) {
                                 isFileExist = false;
@@ -799,8 +799,8 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                             sourceCodeContent: string,
                             sourceMapObject: ISourceMap;
 
-                        before((done) => {
-                            JavaScriptObfuscatorCLI.obfuscate([
+                        before(async () => {
+                            await JavaScriptObfuscatorCLI.obfuscate([
                                 'node',
                                 'javascript-obfuscator',
                                 fixtureFilePath,
@@ -825,10 +825,12 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                                 isFileExist = true;
                                 sourceMapObject = JSON.parse(sourceMapContent);
 
-                                resolveSources(sourceMapObject, fixtureFilePath, fs.readFile, (error, result) => {
+                                await new Promise<void>((resolve) => {
+                            resolveSources(sourceMapObject, fixtureFilePath, fs.readFile, (error, result) => {
                                     resolvedSources =
                                         typeof result.sourcesContent[0] === 'string' ? result.sourcesContent[0] : '';
-                                    done();
+                                    resolve();
+                                });
                                 });
                             } catch (e) {
                                 isFileExist = false;
@@ -870,8 +872,8 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                         sourceCodeContent: string,
                         sourceMapObject: ISourceMap;
 
-                    before((done) => {
-                        JavaScriptObfuscatorCLI.obfuscate([
+                    before(async () => {
+                        await JavaScriptObfuscatorCLI.obfuscate([
                             'node',
                             'javascript-obfuscator',
                             fixtureFilePath,
@@ -894,10 +896,12 @@ describe('JavaScriptObfuscatorCLI', function (): void {
 
                         sourceMapObject = parseSourceMapFromObfuscatedCode(obfuscatedCodeContent);
 
-                        resolveSources(sourceMapObject, fixtureFilePath, fs.readFile, (error, result) => {
-                            resolvedSources =
-                                typeof result.sourcesContent[0] === 'string' ? result.sourcesContent[0] : '';
-                            done();
+                        await new Promise<void>((resolve) => {
+                            resolveSources(sourceMapObject, fixtureFilePath, fs.readFile, (error, result) => {
+                                resolvedSources =
+                                    typeof result.sourcesContent[0] === 'string' ? result.sourcesContent[0] : '';
+                                resolve();
+                            });
                         });
                     });
 
@@ -923,8 +927,8 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                             sourceCodeContent: string,
                             sourceMapObject: ISourceMap;
 
-                        before((done) => {
-                            JavaScriptObfuscatorCLI.obfuscate([
+                        before(async () => {
+                            await JavaScriptObfuscatorCLI.obfuscate([
                                 'node',
                                 'javascript-obfuscator',
                                 fixtureFilePath,
@@ -948,10 +952,12 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                             const obfuscatedCodeContent = fs.readFileSync(outputFilePath, { encoding: 'utf8' });
                             sourceMapObject = parseSourceMapFromObfuscatedCode(obfuscatedCodeContent);
 
-                            resolveSources(sourceMapObject, fixtureFilePath, fs.readFile, (error, result) => {
-                                resolvedSources =
-                                    typeof result.sourcesContent[0] === 'string' ? result.sourcesContent[0] : '';
-                                done();
+                            await new Promise<void>((resolve) => {
+                                resolveSources(sourceMapObject, fixtureFilePath, fs.readFile, (error, result) => {
+                                    resolvedSources =
+                                        typeof result.sourcesContent[0] === 'string' ? result.sourcesContent[0] : '';
+                                    resolve();
+                                });
                             });
                         });
 
@@ -992,8 +998,8 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                             sourceCodeContent: string,
                             sourceMapObject: ISourceMap;
 
-                        before((done) => {
-                            JavaScriptObfuscatorCLI.obfuscate([
+                        before(async () => {
+                            await JavaScriptObfuscatorCLI.obfuscate([
                                 'node',
                                 'javascript-obfuscator',
                                 fixtureFilePath,
@@ -1017,10 +1023,12 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                             const obfuscatedCodeContent = fs.readFileSync(outputFilePath, { encoding: 'utf8' });
                             sourceMapObject = parseSourceMapFromObfuscatedCode(obfuscatedCodeContent);
 
-                            resolveSources(sourceMapObject, fixtureFilePath, fs.readFile, (error, result) => {
-                                resolvedSources =
-                                    typeof result.sourcesContent[0] === 'string' ? result.sourcesContent[0] : '';
-                                done();
+                            await new Promise<void>((resolve) => {
+                                resolveSources(sourceMapObject, fixtureFilePath, fs.readFile, (error, result) => {
+                                    resolvedSources =
+                                        typeof result.sourcesContent[0] === 'string' ? result.sourcesContent[0] : '';
+                                    resolve();
+                                });
                             });
                         });
 
@@ -1064,10 +1072,10 @@ describe('JavaScriptObfuscatorCLI', function (): void {
             describe('`--help` option is set without any additional parameters', () => {
                 let isConsoleLogCalled: boolean;
 
-                beforeEach(() => {
+                beforeEach(async () => {
                     stdoutWriteMock.mute();
 
-                    JavaScriptObfuscatorCLI.obfuscate(['node', 'javascript-obfuscator', '--help']);
+                    await JavaScriptObfuscatorCLI.obfuscate(['node', 'javascript-obfuscator', '--help']);
 
                     stdoutWriteMock.restore();
                     isConsoleLogCalled = callback.called;
@@ -1081,10 +1089,10 @@ describe('JavaScriptObfuscatorCLI', function (): void {
             describe('`--help` option is set before file path', () => {
                 let isConsoleLogCalled: boolean;
 
-                beforeEach(() => {
+                beforeEach(async () => {
                     stdoutWriteMock.mute();
 
-                    JavaScriptObfuscatorCLI.obfuscate(['node', 'javascript-obfuscator', '--help', fixtureFilePath]);
+                    await JavaScriptObfuscatorCLI.obfuscate(['node', 'javascript-obfuscator', '--help', fixtureFilePath]);
 
                     stdoutWriteMock.restore();
                     isConsoleLogCalled = callback.called;
@@ -1098,10 +1106,10 @@ describe('JavaScriptObfuscatorCLI', function (): void {
             describe('`--help` option is set after file path', () => {
                 let isConsoleLogCalled: boolean;
 
-                beforeEach(() => {
+                beforeEach(async () => {
                     stdoutWriteMock.mute();
 
-                    JavaScriptObfuscatorCLI.obfuscate(['node', 'javascript-obfuscator', fixtureFilePath, '--help']);
+                    await JavaScriptObfuscatorCLI.obfuscate(['node', 'javascript-obfuscator', fixtureFilePath, '--help']);
 
                     stdoutWriteMock.restore();
                     isConsoleLogCalled = callback.called;
@@ -1115,10 +1123,10 @@ describe('JavaScriptObfuscatorCLI', function (): void {
             describe('no arguments passed', () => {
                 let isConsoleLogCalled: boolean;
 
-                beforeEach(() => {
+                beforeEach(async () => {
                     stdoutWriteMock.mute();
 
-                    JavaScriptObfuscatorCLI.obfuscate(['node', 'javascript-obfuscator']);
+                    await JavaScriptObfuscatorCLI.obfuscate(['node', 'javascript-obfuscator']);
 
                     stdoutWriteMock.restore();
                     isConsoleLogCalled = callback.called;
@@ -1141,8 +1149,8 @@ describe('JavaScriptObfuscatorCLI', function (): void {
 
                 let isFileExist: boolean, sourceMapObject: any;
 
-                before(() => {
-                    JavaScriptObfuscatorCLI.obfuscate([
+                before(async () => {
+                    await JavaScriptObfuscatorCLI.obfuscate([
                         'node',
                         'javascript-obfuscator',
                         fixtureFilePath,
@@ -1194,11 +1202,11 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                     isFileExist1: boolean,
                     isFileExist2: boolean;
 
-                before(() => {
+                before(async () => {
                     outputFixturesFilePath1 = path.join(directoryPath, outputFileName1);
                     outputFixturesFilePath2 = path.join(directoryPath, outputFileName2);
 
-                    JavaScriptObfuscatorCLI.obfuscate([
+                    await JavaScriptObfuscatorCLI.obfuscate([
                         'node',
                         'javascript-obfuscator',
                         directoryPath,
@@ -1230,8 +1238,8 @@ describe('JavaScriptObfuscatorCLI', function (): void {
 
             let isFileExist: boolean;
 
-            before(() => {
-                JavaScriptObfuscatorCLI.obfuscate([
+            before(async () => {
+                await JavaScriptObfuscatorCLI.obfuscate([
                     'node',
                     'javascript-obfuscator',
                     fixtureFilePath,
@@ -1282,10 +1290,10 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                     loggingMessageResult1: string,
                     loggingMessageResult2: string;
 
-                before(() => {
+                before(async () => {
                     consoleLogSpy = sinon.spy(console, 'log');
 
-                    JavaScriptObfuscatorCLI.obfuscate([
+                    await JavaScriptObfuscatorCLI.obfuscate([
                         'node',
                         'javascript-obfuscator',
                         directoryPath,
@@ -1322,11 +1330,11 @@ describe('JavaScriptObfuscatorCLI', function (): void {
 
                 let consoleLogSpy: sinon.SinonSpy<any, void>, loggingMessageResult: string;
 
-                before(() => {
+                before(async () => {
                     consoleLogSpy = sinon.spy(console, 'log');
 
                     try {
-                        JavaScriptObfuscatorCLI.obfuscate([
+                        await JavaScriptObfuscatorCLI.obfuscate([
                             'node',
                             'javascript-obfuscator',
                             directoryPath,
@@ -1345,6 +1353,206 @@ describe('JavaScriptObfuscatorCLI', function (): void {
                 after(() => {
                     consoleLogSpy.restore();
                 });
+            });
+        });
+
+        describe('`--pro-api-token` option', () => {
+            let fetchStub: sinon.SinonStub;
+            let proApiFilePath: string;
+
+            before(async () => {
+                proApiFilePath = path.join(outputDirName, 'pro-api-test.js');
+                fs.writeFileSync(proApiFilePath, 'const test = 1;');
+            });
+
+            afterEach(() => {
+                if (fetchStub) {
+                    fetchStub.restore();
+                }
+            });
+
+            after(() => {
+                if (fs.existsSync(proApiFilePath)) {
+                    fs.unlinkSync(proApiFilePath);
+                }
+            });
+
+            describe('Variant #1: Pro API token with vmObfuscation', () => {
+                it('should use Pro API when --pro-api-token and --vm-obfuscation are provided', async () => {
+                    const mockResponse = {
+                        ok: true,
+                        status: 200,
+                        text: async () => JSON.stringify({ type: 'result', code: 'var obfuscated=1;', sourceMap: '' })
+                    } as Response;
+
+                    fetchStub = sinon.stub(global, 'fetch').resolves(mockResponse);
+
+                    await JavaScriptObfuscatorCLI.obfuscate([
+                        'node',
+                        'javascript-obfuscator',
+                        proApiFilePath,
+                        '--output',
+                        path.join(outputDirName, 'pro-api-output.js'),
+                        '--pro-api-token',
+                        'test-token-123',
+                        '--vm-obfuscation',
+                        'true'
+                    ]);
+
+                    // Wait for async operations
+                    await new Promise((resolve) => setTimeout(resolve, 100));
+
+                    assert.isTrue(fetchStub.called, 'fetch should be called for Pro API');
+                    const calledUrl = fetchStub.firstCall?.args[0];
+                    assert.include(calledUrl, 'obfuscator.io/api/v1');
+                });
+            });
+
+            describe('Variant #2: Pro API token with parseHtml', () => {
+                it('should use Pro API when --pro-api-token and --parse-html are provided', async () => {
+                    const mockResponse = {
+                        ok: true,
+                        status: 200,
+                        text: async () => JSON.stringify({ type: 'result', code: 'var obfuscated=1;', sourceMap: '' })
+                    } as Response;
+
+                    fetchStub = sinon.stub(global, 'fetch').resolves(mockResponse);
+
+                    await JavaScriptObfuscatorCLI.obfuscate([
+                        'node',
+                        'javascript-obfuscator',
+                        proApiFilePath,
+                        '--output',
+                        path.join(outputDirName, 'pro-api-output2.js'),
+                        '--pro-api-token',
+                        'test-token-123',
+                        '--parse-html',
+                        'true'
+                    ]);
+
+                    // Wait for async operations
+                    await new Promise((resolve) => setTimeout(resolve, 100));
+
+                    assert.isTrue(fetchStub.called, 'fetch should be called for Pro API');
+                });
+            });
+
+            describe('Variant #3: Pro API token with version', () => {
+                it('should pass version to Pro API URL when --pro-api-version is provided', async () => {
+                    const mockResponse = {
+                        ok: true,
+                        status: 200,
+                        text: async () => JSON.stringify({ type: 'result', code: 'var obfuscated=1;', sourceMap: '' })
+                    } as Response;
+
+                    fetchStub = sinon.stub(global, 'fetch').resolves(mockResponse);
+
+                    await JavaScriptObfuscatorCLI.obfuscate([
+                        'node',
+                        'javascript-obfuscator',
+                        proApiFilePath,
+                        '--output',
+                        path.join(outputDirName, 'pro-api-output3.js'),
+                        '--pro-api-token',
+                        'test-token-123',
+                        '--pro-api-version',
+                        '5.0.0-beta.20',
+                        '--vm-obfuscation',
+                        'true'
+                    ]);
+
+                    // Wait for async operations
+                    await new Promise((resolve) => setTimeout(resolve, 100));
+
+                    assert.isTrue(fetchStub.called, 'fetch should be called for Pro API');
+                    const calledUrl = fetchStub.firstCall?.args[0];
+                    assert.include(calledUrl, 'version=5.0.0-beta.20');
+                });
+            });
+
+            describe('Variant #4: Pro API token without Pro features throws error', () => {
+                it('should throw error when --pro-api-token is provided but no Pro features enabled', async () => {
+                    const outputPath = path.join(outputDirName, 'local-output.js');
+
+                    try {
+                        await JavaScriptObfuscatorCLI.obfuscate([
+                            'node',
+                            'javascript-obfuscator',
+                            proApiFilePath,
+                            '--output',
+                            outputPath,
+                            '--pro-api-token',
+                            'test-token-123',
+                            '--compact',
+                            'true'
+                        ]);
+                        assert.fail('Expected error was not thrown');
+                    } catch (error) {
+                        assert.include(
+                            (error as Error).message,
+                            'Obfuscator.io Pro obfuscation works only when Pro features set.'
+                        );
+                    }
+                });
+            });
+        });
+
+        describe('hasProFeatures static method', () => {
+            it('should return true for vmObfuscation', () => {
+                assert.isTrue(ProApiClient.hasProFeatures({ vmObfuscation: true }));
+            });
+
+            it('should return true for parseHtml', () => {
+                assert.isTrue(ProApiClient.hasProFeatures({ parseHtml: true }));
+            });
+
+            it('should return false for no Pro features', () => {
+                assert.isFalse(ProApiClient.hasProFeatures({ compact: true }));
+            });
+        });
+
+        /**
+         * https://github.com/javascript-obfuscator/javascript-obfuscator/issues/1236
+         */
+        describe('`--options-preset` should apply preset options that are not explicitly set via CLI', () => {
+            const longStringFixturePath: string = path.join(fixturesDirName, 'sample-long-string.js');
+
+            let obfuscatedCode: string;
+
+            before(async () => {
+                await JavaScriptObfuscatorCLI.obfuscate([
+                    'node',
+                    'javascript-obfuscator',
+                    longStringFixturePath,
+                    '--output',
+                    outputFilePath,
+                    '--options-preset',
+                    'medium-obfuscation',
+                    '--string-array',
+                    'false',
+                    '--dead-code-injection',
+                    'false',
+                    '--control-flow-flattening',
+                    'false',
+                    '--self-defending',
+                    'false',
+                    '--debug-protection',
+                    'false',
+                    '--disable-console-output',
+                    'false',
+                    '--seed',
+                    '1'
+                ]);
+
+                obfuscatedCode = fs.readFileSync(outputFilePath, 'utf8');
+            });
+
+            it('should apply `splitStrings` from preset without explicit `--split-strings` flag', () => {
+                assert.match(obfuscatedCode, /'.+'\s*\+\s*'.+'\s*\+\s*'.+'/);
+            });
+
+            after(() => {
+                fs.unlinkSync(outputFilePath);
             });
         });
 

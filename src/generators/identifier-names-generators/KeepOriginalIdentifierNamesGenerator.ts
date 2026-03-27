@@ -36,22 +36,7 @@ export class KeepOriginalIdentifierNamesGenerator extends AbstractIdentifierName
      * @returns {string}
      */
     public generateNext(nameLength?: number): string {
-        const rangeMinInteger: number = 10000;
-        const rangeMaxInteger: number = 99_999_999;
-        const randomInteger: number = this.randomGenerator.getRandomInteger(rangeMinInteger, rangeMaxInteger);
-        const hexadecimalNumber: string = NumberUtils.toHex(randomInteger);
-        const prefixLength: number = Utils.hexadecimalPrefix.length;
-        const baseNameLength: number = (nameLength ?? 6) + prefixLength;
-        const baseIdentifierName: string = hexadecimalNumber.slice(0, baseNameLength);
-        const identifierName: string = `_${baseIdentifierName}`;
-
-        if (!this.isValidIdentifierName(identifierName)) {
-            return this.generateNext(nameLength);
-        }
-
-        this.preserveName(identifierName);
-
-        return identifierName;
+        return this.generateNextName(nameLength, (name) => this.isValidIdentifierName(name));
     }
 
     /**
@@ -61,9 +46,17 @@ export class KeepOriginalIdentifierNamesGenerator extends AbstractIdentifierName
      * @returns {string}
      */
     public generateForGlobalScope(nameLength?: number): string {
-        const identifierName: string = this.generateNext(nameLength);
+        return this.generateForGlobalScopeInternal(nameLength, (name) => this.isValidIdentifierName(name));
+    }
 
-        return `${this.options.identifiersPrefix}${identifierName}`.replace('__', '_');
+    /**
+     * Generate a name for global scope with validation across all scopes
+     *
+     * @param {number} nameLength
+     * @returns {string}
+     */
+    public generateForGlobalScopeWithAllScopesValidation(nameLength?: number): string {
+        return this.generateForGlobalScopeInternal(nameLength, (name) => this.isValidIdentifierNameInAllScopes(name));
     }
 
     /**
@@ -87,5 +80,40 @@ export class KeepOriginalIdentifierNamesGenerator extends AbstractIdentifierName
      */
     public generateForLabel(label: string, nameLength?: number): string {
         return this.generateNext(nameLength);
+    }
+
+    /**
+     * @param {number} nameLength
+     * @param {(name: string) => boolean} validationFn
+     * @returns {string}
+     */
+    private generateNextName(nameLength: number | undefined, validationFn: (name: string) => boolean): string {
+        const rangeMinInteger: number = 10000;
+        const rangeMaxInteger: number = 99_999_999;
+        const randomInteger: number = this.randomGenerator.getRandomInteger(rangeMinInteger, rangeMaxInteger);
+        const hexadecimalNumber: string = NumberUtils.toHex(randomInteger);
+        const prefixLength: number = Utils.hexadecimalPrefix.length;
+        const baseNameLength: number = (nameLength ?? 6) + prefixLength;
+        const baseIdentifierName: string = hexadecimalNumber.slice(0, baseNameLength);
+        const identifierName: string = `_${baseIdentifierName}`;
+
+        if (!validationFn(identifierName)) {
+            return this.generateNextName(nameLength, validationFn);
+        }
+
+        this.preserveName(identifierName);
+
+        return identifierName;
+    }
+
+    /**
+     * @param {number} nameLength
+     * @param {(name: string) => boolean} validationFn
+     * @returns {string}
+     */
+    private generateForGlobalScopeInternal(nameLength: number | undefined, validationFn: (name: string) => boolean): string {
+        const identifierName: string = this.generateNextName(nameLength, validationFn);
+
+        return `${this.options.identifiersPrefix}${identifierName}`.replace('__', '_');
     }
 }

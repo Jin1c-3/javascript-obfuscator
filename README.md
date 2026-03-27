@@ -1,7 +1,7 @@
 <!--
   Title: JavaScript Obfuscator
   Description: A powerful obfuscator for JavaScript and Node.js.
-  Author: Timofey Kachalov
+  Author: Timofei Kachalov
   -->
 
 #### You can support this project by donating:
@@ -13,10 +13,22 @@ Huge thanks to all supporters!
 
 ![logo](https://raw.githubusercontent.com/javascript-obfuscator/javascript-obfuscator/master/images/logo.png)
 
+---
+
+### :rocket: Obfuscator.io with VM Obfuscation is out!
+
+**Obfuscator.io** features **VM-based bytecode obfuscation** — the most advanced code protection available. Your JavaScript functions are transformed into custom bytecode running on an embedded virtual machine, making reverse engineering extremely difficult.
+
+[Try it at obfuscator.io](https://obfuscator.io)
+
+This package provides access to Obfuscator.io Pro API via CLI and Node.js API.
+
+---
+
 JavaScript Obfuscator is a powerful free obfuscator for JavaScript, containing a variety of features which provide protection for your source code.
 
 **Key features:**
-- VM obfuscation (via [JavaScript Obfuscator Pro](https://obfuscator.io/))
+- VM bytecode obfuscation (via [Obfuscator.io](https://obfuscator.io/))
 - variables renaming
 - strings extraction and encryption
 - dead code injection
@@ -39,6 +51,7 @@ The example of obfuscated code: [github.com](https://github.com/javascript-obfus
 * Malta: [malta-js-obfuscator](https://github.com/fedeghe/malta-js-obfuscator)
 * Netlify plugin: [netlify-plugin-js-obfuscator](https://www.npmjs.com/package/netlify-plugin-js-obfuscator)
 * Snowpack plugin: [snowpack-javascript-obfuscator](https://www.npmjs.com/package/snowpack-javascript-obfuscator)
+* Vite plugin: [vite-plugin-bundle-obfuscator](https://github.com/z0ffy/vite-plugin-bundle-obfuscator)
 
 [![npm version](https://badge.fury.io/js/javascript-obfuscator.svg)](https://badge.fury.io/js/javascript-obfuscator)
 [![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2Fjavascript-obfuscator%2Fjavascript-obfuscator.svg?type=shield)](https://app.fossa.io/projects/git%2Bgithub.com%2Fjavascript-obfuscator%2Fjavascript-obfuscator?ref=badge_shield)
@@ -290,7 +303,6 @@ const result = await JavaScriptObfuscator.obfuscatePro(
     `function hello() { console.log("Hello World"); }`,
     {
         vmObfuscation: true,  // Required!
-        vmObfuscationThreshold: 1,
         compact: true
     },
     {
@@ -304,17 +316,17 @@ console.log(result.getObfuscatedCode());
 **Parameters:**
 
 * `sourceCode` (`string`) – source code to obfuscate
-* `options` (`Object`) – obfuscation options. **Must include `vmObfuscation: true`**
+* `options` (`Object`) – obfuscation options. **Must include at least one Pro feature: `vmObfuscation: true` or `parseHtml: true`**
 * `apiConfig` (`Object`) – Pro API configuration:
   * `apiToken` (`string`, required) – your API token from obfuscator.io
   * `timeout` (`number`, optional) – request timeout in ms (default: `300000` - 5 minutes)
-  * `version` (`string`, optional) – JavaScript Obfuscator Pro version to use (e.g., `'5.0.0-beta.20'`). Defaults to latest version if not specified.
+  * `version` (`string`, optional) – Obfuscator.io version to use (e.g., `'5.0.3'`). Defaults to latest version if not specified.
 * `onProgress` (`function`, optional) – callback for progress updates during obfuscation
 
 **Returns:** `Promise<ObfuscationResult>`
 
 **Throws:** `ApiError` if:
-- `vmObfuscation` is not enabled in options
+- No Pro features (`vmObfuscation` or `parseHtml`) are enabled in options
 - API token is invalid or expired
 - API request fails
 
@@ -326,12 +338,11 @@ You can specify which obfuscator version to use via the `version` option:
 const result = await JavaScriptObfuscator.obfuscatePro(
     sourceCode,
     {
-        vmObfuscation: true,
-        vmObfuscationThreshold: 1
+        vmObfuscation: true
     },
     {
         apiToken: 'your_javascript_obfuscator_pro_api_token',
-        version: '5.0.0-beta.20'  // Use specific version
+        version: '5.0.3'  // Use specific version
     }
 );
 ```
@@ -344,8 +355,7 @@ The API uses streaming mode to provide real-time progress updates during obfusca
 const result = await JavaScriptObfuscator.obfuscatePro(
     sourceCode,
     {
-        vmObfuscation: true,
-        vmObfuscationThreshold: 1
+        vmObfuscation: true
     },
     {
         apiToken: 'your_javascript_obfuscator_pro_api_token'
@@ -356,6 +366,28 @@ const result = await JavaScriptObfuscator.obfuscatePro(
     }
 );
 ```
+
+### Checking for Pro Features
+
+Use `ProApiClient.hasProFeatures()` to check if options require the Pro API:
+
+```javascript
+const { ProApiClient } = require('javascript-obfuscator');
+
+const options = { vmObfuscation: true, compact: true };
+
+if (ProApiClient.hasProFeatures(options)) {
+    // Use obfuscatePro() - requires API token
+    const result = await JavaScriptObfuscator.obfuscatePro(sourceCode, options, { apiToken });
+} else {
+    // Use regular obfuscate() - no API token needed
+    const result = JavaScriptObfuscator.obfuscate(sourceCode, options);
+}
+```
+
+Pro features include:
+- `vmObfuscation: true` – VM-based bytecode obfuscation
+- `parseHtml: true` – HTML parsing with inline JavaScript obfuscation
 
 ### Error Handling
 
@@ -372,6 +404,36 @@ try {
     }
 }
 ```
+
+### CLI Usage with Pro API
+
+You can also use Pro API features directly from the CLI by providing your API token:
+
+```sh
+javascript-obfuscator input.js --pro-api-token YOUR_API_TOKEN --vm-obfuscation true -o output.js
+```
+
+With a specific obfuscator version:
+
+```sh
+javascript-obfuscator input.js --pro-api-token YOUR_API_TOKEN --pro-api-version 5.0.3 --vm-obfuscation true -o output.js
+```
+
+**CLI Options:**
+- `--pro-api-token <string>` – Your API token from [obfuscator.io](https://obfuscator.io)
+- `--pro-api-version <string>` – Obfuscator.io version to use (optional, defaults to latest)
+
+The CLI automatically detects when Pro features (`vmObfuscation` or `parseHtml`) are enabled and routes the request through the Pro API.
+
+### Large File Uploads
+
+For files larger than ~4MB, the Pro API uses client-side uploads to Vercel Blob storage. To enable this feature, install the optional `@vercel/blob` package:
+
+```sh
+npm install @vercel/blob
+```
+
+Without this package, large file obfuscation will fail with an error message prompting you to install it.
 
 ---
 
@@ -573,6 +635,37 @@ Following options are available for the JS Obfuscator:
     --target <string> [browser, browser-no-eval, node]
     --transform-object-keys <boolean>
     --unicode-escape-sequence <boolean>
+    --pro-api-token <string>
+    --pro-api-version <string>
+    --vm-obfuscation <boolean>
+    --vm-obfuscation-threshold <number>
+    --vm-preprocess-identifiers <boolean>
+    --vm-dynamic-opcodes <boolean>
+    --vm-target-functions '<list>' (comma separated)
+    --vm-exclude-functions '<list>' (comma separated)
+    --vm-target-functions-mode <string> [root, comment]
+    --vm-wrap-top-level-initializers <boolean>
+    --vm-opcode-shuffle <boolean>
+    --vm-bytecode-encoding <boolean>
+    --vm-bytecode-array-encoding <boolean>
+    --vm-bytecode-array-encoding-key <string>
+    --vm-bytecode-array-encoding-key-getter <string>
+    --vm-instruction-shuffle <boolean>
+    --vm-jumps-encoding <boolean>
+    --vm-decoy-opcodes <boolean>
+    --vm-dead-code-injection <boolean>
+    --vm-split-dispatcher <boolean>
+    --vm-macro-ops <boolean>
+    --vm-debug-protection <boolean>
+    --vm-runtime-opcode-derivation <boolean>
+    --vm-stateful-opcodes <boolean>
+    --vm-stack-encoding <boolean>
+    --vm-randomize-keys <boolean>
+    --vm-indirect-dispatch <boolean>
+    --vm-compact-dispatcher <boolean>
+    --vm-bytecode-format <string> [binary, json]
+    --parse-html <boolean>
+    --strict-mode <boolean>
 ```
 
 <!-- ##options-start## -->
@@ -1756,110 +1849,301 @@ The performance will be at a relatively normal level
 
 <!-- ##options-end## -->
 
-## JavaScript Obfuscator Pro VM options
+## Obfuscator.io Pro Options
+
+> :warning: **The following VM obfuscation/Pro options are available only via the [Obfuscator.io Pro API](https://obfuscator.io/).**
+>
+> To use these options, you need a Pro API token from [obfuscator.io](https://obfuscator.io) and must call the `obfuscatePro()` method instead of `obfuscate()`. See the [Pro API Methods](#shield-pro-api-methods-vm-obfuscation) section for details.
 
 ### `vmObfuscation`
 Type: `boolean` Default: `false`
 
 Enables VM-based bytecode obfuscation. When enabled, JavaScript functions are compiled into custom bytecode that runs on an embedded virtual machine. This provides the highest level of protection as the original code logic is completely transformed.
 
-**Warning:** This significantly increases code size and may impact performance. Use `vmObfuscationThreshold` to control which root-level functions are transformed.
-
-### `vmObfuscationThreshold`
-Type: `number` Default: `1`
-
-The probability (from 0 to 1) that a function will be transformed to VM bytecode when `vmObfuscation` is enabled.
-
-- `0` - no functions will be transformed
-- `0.5` - 50% of functions will be transformed
-- `1` - all functions will be transformed
+**Example:**
+Your readable code like `return qty * price` becomes a list of numbers like `[0x15,0x03,0x17,...]` that only the embedded VM interpreter can execute. The original logic is no longer visible as JavaScript.
 
 ### `vmTargetFunctions`
 Type: `string[]` Default: `[]`
 
-Array of root-level function names to target for VM obfuscation. When specified, only these functions will be transformed (subject to `vmObfuscationThreshold`). Empty array means all functions are candidates.
+Specify exactly which root-level functions should get VM protection by name.
+
+**Example:**
+```javascript
+{
+    vmObfuscation: true,
+    vmTargetFunctions: ['someFunctionName']
+}
+```
+
+**Result:** Only these three functions get VM-protected. Everything else stays as regular (but still obfuscated) JavaScript. Perfect for protecting sensitive license checks or authentication logic while keeping the rest of your code lean.
 
 ### `vmExcludeFunctions`
 Type: `string[]` Default: `[]`
 
-Array of root-level function names to exclude from VM obfuscation. These functions will never be transformed regardless of other settings.
+Specify root-level functions that should never get VM protection. Takes precedence over other settings.
 
-### `vmOpcodeShuffle`
+**Example:**
+```javascript
+{
+    vmObfuscation: true,
+    vmExcludeFunctions: ['someFunctionName']
+}
+```
+
+**When to use:** Performance-critical root-level functions (animation loops, real-time data processing) can be excluded to avoid VM overhead while still protecting everything else.
+
+### `vmTargetFunctionsMode`
+Type: `string` Default: `root`
+
+Controls how functions/methods are selected for VM obfuscation.
+
+| Mode | Description                                                                                                                                                      |
+|------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `root` | Default behavior. Only root-level functions are considered for VM obfuscation. Uses `vmTargetFunctions` allow-list and `vmExcludeFunctions` deny-list to filter. |
+| `comment` | Only functions/methods decorated with `/* javascript-obfuscator:vm */` comment are VM-obfuscated. Works with functions/methods at **any nesting level**.         |
+
+**Example - Comment mode:**
+```javascript
+// Source code
+function regularFunction() {
+    return 'not virtualized';
+}
+
+/* javascript-obfuscator:vm */
+function sensitiveFunction() {
+    return 'this will be VM-protected';
+}
+
+function outer() {
+    /* javascript-obfuscator:vm */
+    function nestedSensitive() {
+        return 'nested but still VM-protected';
+    }
+    return nestedSensitive();
+}
+```
+
+```javascript
+// Obfuscator options
+{
+    vmObfuscation: true,
+    vmTargetFunctionsMode: 'comment'
+}
+```
+
+**When to use:** When you need surgical control over exactly which functions get VM protection, especially nested functions that contain sensitive logic. Unlike `vmTargetFunctions` which only works with root-level named functions, comment mode lets you protect any function anywhere in your code.
+
+### `vmWrapTopLevelInitializers`
 Type: `boolean` Default: `false`
 
-Randomizes the opcode mapping for each obfuscation run. Makes static analysis more difficult as opcode meanings change between builds.
+Wraps some top-level variable initializers in IIFEs (Immediately Invoked Function Expressions) so they can be VM-obfuscated.
+
+**What it does:**
+Without this option, top-level constants and variables remain visible in the output:
+```javascript
+// Input
+const MY_STRING = "my-string";
+
+// Output (without vmWrapTopLevelInitializers)
+const MY_STRING = "my-string";  // String is visible!
+```
+
+With this option enabled, the initializer is wrapped in an IIFE that gets VM-obfuscated:
+```javascript
+// Input
+const MY_STRING = "my-string";
+
+// Output (with vmWrapTopLevelInitializers: true)
+const MY_STRING = (() => { return /* VM bytecode call */ })();  // String hidden in bytecode
+```
+
+**Note:** This option only works when `vmTargetFunctionsMode` is `'root'` (the default).
+
+### `vmDynamicOpcodes`
+Type: `boolean` Default: `false`
+
+Makes the VM interpreter smaller and unique for each build.
+
+**What it does:**
+1. **Filters unused instructions** - If your code doesn't use classes, class-related instructions are removed entirely
+2. **Randomizes structure** - The order of instruction handlers is shuffled each build
+
+As the result - smaller output and each build looks different.
 
 ### `vmBytecodeEncoding`
 Type: `boolean` Default: `false`
 
-Encodes the bytecode instructions using XOR encryption. The decoding key is derived at runtime, adding another layer of protection.
+Encodes each bytecode instruction. Instructions are decoded one at a time during execution.
 
 ### `vmBytecodeArrayEncoding`
 Type: `boolean` Default: `false`
 
-Applies additional encoding to the bytecode array, making it harder to identify bytecode patterns through static analysis.
+Encodes the entire bytecode array as a single block. The array is decoded once at startup before execution begins. Use together with `vmBytecodeEncoding` for two layers of protection.
+
+### `vmBytecodeArrayEncodingKey`
+Type: `string` Default: `''`
+
+Custom encryption key for bytecode array encoding. When set, this key is used instead of the default environment-derived key. The key must be provided at runtime via `vmBytecodeArrayEncodingKeyGetter`.
+
+This option externalizes the encryption key - it's not embedded in the obfuscated code itself. While the key is still accessible at runtime (and thus not truly secret), this separation prevents static analysis tools from finding the key by examining the code alone.
+
+**Important:** The key must be available **synchronously** when the obfuscated code loads. Use synchronous storage like cookies, localStorage, sessionStorage, global variables, or DOM elements (e.g., server-injected meta tags). Async methods like `fetch()` cannot be used directly in the key getter expression.
+
+### `vmBytecodeArrayEncodingKeyGetter`
+Type: `string` Default: `''`
+
+**Synchronous** JavaScript expression that **returns** the encryption key at runtime. This expression is evaluated when the obfuscated code loads, and must return the same key that was provided in `vmBytecodeArrayEncodingKey`.
+
+**The obfuscated code will only work when the key getter returns exactly the same key that was used during obfuscation.** If the keys don't match, decryption will fail and the code will produce garbage or errors. If the key getter returns `undefined`, `null`, or an empty string, the code will throw an error: "VM decryption key not available".
+
+**Important:** The key should NOT be defined in the same JavaScript file/script as the obfuscated code. Doing so defeats the purpose of key externalization, as static analysis could still find the key. Store the key in a separate source: server-set cookies, localStorage populated by another script, server-injected HTML meta tags, or a global variable set by a different script that loads before the obfuscated code.
+
+Examples:
+```ts
+// From cookie
+vmBytecodeArrayEncodingKeyGetter: "document.cookie.match(/vmKey=([^;]+)/)?.[1]"
+
+// From localStorage
+vmBytecodeArrayEncodingKeyGetter: "localStorage.getItem('vmKey')"
+
+// From global variable
+vmBytecodeArrayEncodingKeyGetter: "window.__VM_KEY__"
+
+// From meta tag (server-injected)
+vmBytecodeArrayEncodingKeyGetter: "document.querySelector('meta[name=\"vm-key\"]').content"
+
+// From nested object
+vmBytecodeArrayEncodingKeyGetter: "window.config.encryption.key"
+```
+
+**Usage example:**
+```ts
+// Build time
+JavaScriptObfuscator.obfuscate(code, {
+    vmObfuscation: true,
+    vmBytecodeArrayEncoding: true,
+    vmBytecodeArrayEncodingKey: 'mySecretKey123',
+    vmBytecodeArrayEncodingKeyGetter: 'window.__VM_KEY__'
+});
+
+// Runtime - key must be set before obfuscated code runs
+window.__VM_KEY__ = 'mySecretKey123';
+```
 
 ### `vmJumpsEncoding`
 Type: `boolean` Default: `false`
 
-Encodes jump targets and offsets in the bytecode. This obscures control flow and makes it harder to follow program execution.
+Encodes jump targets in the bytecode. Jump offsets are calculated at runtime, hiding the control flow structure (`if`/`else`, loops, etc.) from static analysis.
 
 ### `vmDecoyOpcodes`
 Type: `boolean` Default: `false`
 
-Inserts fake opcodes into the dispatcher that are never executed. Increases code complexity and confuses reverse engineering attempts.
+Adds fake opcode handlers to the VM dispatcher that are never called. For example, if the VM uses 20 real opcodes, this might add 30 fake handlers, making the interpreter appear more complex than it really is.
 
 ### `vmDeadCodeInjection`
 Type: `boolean` Default: `false`
 
-Injects dead code sequences into the VM bytecode. These sequences are valid but unreachable, adding noise to analysis.
+Injects fake bytecode sequences that are never executed. These look like real instructions but are skipped during runtime, confusing analysis tools that process them.
 
-### `vmSplitDispatcher`
+### `vmCompactDispatcher`
 Type: `boolean` Default: `false`
 
-Splits the VM dispatcher into multiple smaller dispatchers. Makes the execution flow harder to follow.
+Uses a single unified dispatcher (generator-based) for both sync and async/generator code execution. By default (`false`), the VM generates two separate dispatchers: a non-generator version for sync code (faster) and a generator version for async/generator code. When enabled, only the generator-based dispatcher is used for all execution.
+
+**Trade-offs:**
+- `false` (default): Larger code size due to dual dispatchers, but faster sync execution (no generator overhead)
+- `true`: Smaller code size with single dispatcher, but sync code has generator protocol overhead
+
+Use this when code size is more important than sync execution speed.
 
 ### `vmMacroOps`
 Type: `boolean` Default: `false`
 
-Combines common instruction sequences into single macro opcodes. This creates unique instruction patterns that are harder to recognize.
+Combines common instruction sequences into single "macro" opcodes. For example, `LOAD + ADD + STORE` might become a single `MACRO_ADD_TO_VAR` instruction. This breaks pattern recognition and can improve performance.
 
 ### `vmDebugProtection`
 Type: `boolean` Default: `false`
 
 Adds anti-debugging measures to the VM runtime. Detects debugger presence and alters behavior when debugging is detected.
 
-### `vmRuntimeOpcodeDerivation`
-Type: `boolean` Default: `false`
-
-Derives opcode values at runtime through mathematical operations rather than using static values. Makes static analysis significantly harder.
-
 ### `vmStatefulOpcodes`
 Type: `boolean` Default: `false`
 
-Makes opcode interpretation depend on VM state. The same opcode can have different meanings based on execution history.
+Makes opcode meanings depend on position in the bytecode. Each position has a different opcode-to-handler mapping derived from a seed, so the same opcode number performs different operations at different positions.
 
 ### `vmStackEncoding`
 Type: `boolean` Default: `false`
 
-Encodes values pushed to and popped from the VM stack. Adds protection against memory inspection during execution.
+Encrypts values on the VM stack during execution. Values are encoded when pushed and decoded when popped, so memory inspection shows encrypted data instead of actual values.
 
-### `vmRandomizeKeys`
+This option heavily affects performance.
+
+### `strictMode`
+Type: `boolean | null` Default: `null`
+
+Allows to specify how the obfuscator should treat code regarding JavaScript strict mode.
+
+Available values:
+* `null` (default) - auto-detect strict mode from the code. If the code has explicit `'use strict'` directive, ES module syntax, or class methods, it's treated as strict mode. Otherwise, sloppy mode is assumed.
+* `true` - force strict mode treatment for all code, even without explicit `'use strict'` directive. Use this when your code will run in strict mode context (e.g., in ES modules, bundlers, or modern frameworks).
+* `false` - only explicit strict mode indicators (`'use strict'`, ES modules, class methods) are treated as strict. Parent scope inheritance still applies per JS spec.
+
+### `parseHtml`
 Type: `boolean` Default: `false`
 
-Randomizes encryption keys and other constants used by the VM. Each build produces unique key values.
+Enables obfuscation of JavaScript within HTML `<script>` tags.
 
-### `vmIndirectDispatch`
-Type: `boolean` Default: `false`
+When enabled, the obfuscator will:
+- Auto-detect if input is HTML (by checking for `<!DOCTYPE`, `<html>`, `<head>`, `<body>`, or `<script>` tags)
+- Extract JavaScript from `<script>` tags marked with the `data-javascript-obfuscator` attribute
+- Obfuscate each marked script individually while preserving the HTML structure
+- Inject obfuscated code back into the original positions
 
-Uses indirect function calls for opcode dispatch instead of direct switch/case. Makes control flow analysis more difficult.
+**Important:** Only scripts with the `data-javascript-obfuscator` attribute are obfuscated. Each marked script is obfuscated individually and independently. This means:
+- Code inside marked script tags **must be isolated** - it must NOT reference variables, functions, or classes defined in other marked script tags
+- Unmarked scripts can still access globals defined by marked scripts (via `var` declarations or explicit `globalThis` assignments)
+- This gives you explicit control over which scripts to protect
 
-### `vmBytecodeFormat`
-Type: `string` Default: `binary`
+**Obfuscated (must have `data-javascript-obfuscator` attribute):**
+- `<script data-javascript-obfuscator>` - regular scripts
+- `<script type="text/javascript" data-javascript-obfuscator>` - explicitly typed scripts
+- Scripts with any additional attributes (`id`, `class`, other `data-*`, etc.)
 
-Specifies the format used to embed bytecode in the output:
-- `binary` - Compact binary representation (smaller size)
-- `json` - JSON format (easier debugging, larger size)
+**Skipped (left unchanged):**
+- Scripts without `data-javascript-obfuscator` attribute
+- `<script type="module">` - ES modules (even with the attribute)
+- `<script src="...">` - external scripts (even with the attribute)
+- Empty script tags
+
+**Note:** Source maps are not generated when `parseHtml` is enabled, as they would not map correctly to the HTML output.
+
+Example:
+```ts
+// input
+const html = `<!DOCTYPE html>
+<html>
+  <body>
+    <!-- This script will NOT be obfuscated -->
+    <script>
+      var helper = 'utility';
+    </script>
+    
+    <!-- This script WILL be obfuscated -->
+    <script data-javascript-obfuscator>
+      var greeting = 'Hello World';
+      console.log(greeting);
+    </script>
+  </body>
+</html>`;
+
+JavaScriptObfuscator.obfuscate(html, {
+    parseHtml: true,
+    stringArray: true
+});
+
+// output: HTML with only the marked script obfuscated
+```
 
 ## Frequently Asked Questions
 
@@ -1954,7 +2238,7 @@ Become a sponsor and get your logo on our README on Github with a link to your s
 ## License
 [![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2Fjavascript-obfuscator%2Fjavascript-obfuscator.svg?type=large)](https://app.fossa.io/projects/git%2Bgithub.com%2Fjavascript-obfuscator%2Fjavascript-obfuscator?ref=badge_large)
 
-Copyright (C) 2016-2024 [Timofey Kachalov](http://github.com/sanex3339).
+Copyright (C) 2016-2026 [Timofei Kachalov](http://github.com/sanex3339).
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are met:

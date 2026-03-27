@@ -4,6 +4,7 @@ const path = require('path');
 
 const nodeExternals = require('webpack-node-externals');
 const webpack = require('webpack');
+const TerserPlugin = require('terser-webpack-plugin');
 const ForkTsCheckerWebpackPlugin = require('fork-ts-checker-webpack-plugin');
 const ForkTsCheckerNotifierWebpackPlugin = require('fork-ts-checker-notifier-webpack-plugin');
 const ESLintPlugin = require('eslint-webpack-plugin');
@@ -47,8 +48,7 @@ module.exports = {
         new webpack.BannerPlugin(
             {
                 banner: WebpackUtils.getBannerText(
-                    WebpackUtils.getLicenseText(),
-                    WebpackUtils.getSourceMapSupportImport()
+                    WebpackUtils.getLicenseText()
                 ),
                 raw: true,
                 entryOnly: false
@@ -70,6 +70,18 @@ module.exports = {
             skipFirstNotification: true
         })
     ],
+    optimization: {
+        minimizer: [
+            new TerserPlugin({
+                extractComments: false,
+                terserOptions: {
+                    format: {
+                        comments: /^!/  // Keep comments starting with !
+                    }
+                }
+            })
+        ]
+    },
     output: {
         libraryTarget:  'commonjs2'
     },

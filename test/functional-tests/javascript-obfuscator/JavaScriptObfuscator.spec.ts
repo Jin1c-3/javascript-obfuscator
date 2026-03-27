@@ -721,6 +721,24 @@ describe('JavaScriptObfuscator', () => {
             });
         });
 
+        describe('process.env.* support', () => {
+            const regExp: RegExp = /console\['log']\(process\.env\.FOO\);/;
+
+            let obfuscatedCode: string;
+
+            beforeEach(() => {
+                const code: string = readFileAsString(__dirname + '/fixtures/process-env.js');
+
+                obfuscatedCode = JavaScriptObfuscator.obfuscate(code, {
+                    ...NO_ADDITIONAL_NODES_PRESET
+                }).getObfuscatedCode();
+            });
+
+            it('should not obfuscate `process.env.*`', () => {
+                assert.match(obfuscatedCode, regExp);
+            });
+        });
+
         /**
          * https://github.com/javascript-obfuscator/javascript-obfuscator/issues/710
          */
@@ -892,9 +910,7 @@ describe('JavaScriptObfuscator', () => {
         });
 
         describe('Private identifiers support', () => {
-            const regExp: RegExp = new RegExp(
-                'class Foo *{ *' + '#bar *= *0x1; *' + "\\['method'] *\\(\\) *{ *" + 'this\.#bar *= *0x2;' + '} *' + '}'
-            );
+            const variableMatch: string = '_0x([a-f0-9]){4,6}';
 
             let obfuscatedCode: string;
 
@@ -907,8 +923,20 @@ describe('JavaScriptObfuscator', () => {
                 }).getObfuscatedCode();
             });
 
-            it('should support private identifiers', () => {
-                assert.match(obfuscatedCode, regExp);
+            it('should rename private field', () => {
+                assert.match(obfuscatedCode, new RegExp(`#${variableMatch} *= *0x1`));
+            });
+
+            it('should rename private field access', () => {
+                assert.match(obfuscatedCode, new RegExp(`this\\.#${variableMatch} *= *0x2`));
+            });
+
+            it('should rename private method declaration', () => {
+                assert.match(obfuscatedCode, new RegExp(`#${variableMatch}\\(\\) *\\{`));
+            });
+
+            it('should rename private method call', () => {
+                assert.match(obfuscatedCode, new RegExp(`this\\.#${variableMatch}\\(\\)`));
             });
         });
 
@@ -1456,6 +1484,116 @@ describe('JavaScriptObfuscator', () => {
 
             it('Should throw an error if source codes object is not a plain object', () => {
                 assert.throw(testFunc, Error);
+            });
+        });
+    });
+
+    describe('Import attributes', () => {
+        describe('Variant #1: import with "with" syntax', () => {
+            const importAttributesRegExp: RegExp = /from\s*'\.\/config\.json'\s*with\s*\{\s*type\s*:\s*'json'\s*\}/;
+
+            let obfuscatedCode: string;
+
+            before(() => {
+                const code: string = `import config from './config.json' with { type: 'json' };\nconsole.log(config);`;
+
+                obfuscatedCode = JavaScriptObfuscator.obfuscate(code, {
+                    ...NO_ADDITIONAL_NODES_PRESET
+                }).getObfuscatedCode();
+            });
+
+            it('should preserve import attributes in obfuscated code', () => {
+                assert.match(obfuscatedCode, importAttributesRegExp);
+            });
+        });
+
+        describe('Variant #2: import with multiple attributes', () => {
+            const importAttributesRegExp: RegExp = /from\s*'\.\/data\.json'\s*with\s*\{\s*type\s*:\s*'json'\s*,\s*integrity\s*:\s*'sha384-abc'\s*\}/;
+
+            let obfuscatedCode: string;
+
+            before(() => {
+                const code: string = `import data from './data.json' with { type: 'json', integrity: 'sha384-abc' };\nconsole.log(data);`;
+
+                obfuscatedCode = JavaScriptObfuscator.obfuscate(code, {
+                    ...NO_ADDITIONAL_NODES_PRESET
+                }).getObfuscatedCode();
+            });
+
+            it('should preserve multiple import attributes in obfuscated code', () => {
+                assert.match(obfuscatedCode, importAttributesRegExp);
+            });
+        });
+
+        describe('Variant #3: import with "assert" syntax (deprecated)', () => {
+            const importAssertionsRegExp: RegExp = /from\s*'\.\/config\.json'\s*assert\s*\{\s*type\s*:\s*'json'\s*\}/;
+
+            let obfuscatedCode: string;
+
+            before(() => {
+                const code: string = `import config from './config.json' assert { type: 'json' };\nconsole.log(config);`;
+
+                obfuscatedCode = JavaScriptObfuscator.obfuscate(code, {
+                    ...NO_ADDITIONAL_NODES_PRESET
+                }).getObfuscatedCode();
+            });
+
+            it('should preserve import assertions in obfuscated code', () => {
+                assert.match(obfuscatedCode, importAssertionsRegExp);
+            });
+        });
+
+        describe('Variant #4: export with "with" syntax', () => {
+            const exportAttributesRegExp: RegExp = /from\s*'\.\/config\.json'\s*with\s*\{\s*type\s*:\s*'json'\s*\}/;
+
+            let obfuscatedCode: string;
+
+            before(() => {
+                const code: string = `export { default as config } from './config.json' with { type: 'json' };`;
+
+                obfuscatedCode = JavaScriptObfuscator.obfuscate(code, {
+                    ...NO_ADDITIONAL_NODES_PRESET
+                }).getObfuscatedCode();
+            });
+
+            it('should preserve export attributes in obfuscated code', () => {
+                assert.match(obfuscatedCode, exportAttributesRegExp);
+            });
+        });
+
+        describe('Variant #5: export all with "with" syntax', () => {
+            const exportAllAttributesRegExp: RegExp = /export\s*\*\s*from\s*'\.\/utils\.js'\s*with\s*\{\s*type\s*:\s*'javascript'\s*\}/;
+
+            let obfuscatedCode: string;
+
+            before(() => {
+                const code: string = `export * from './utils.js' with { type: 'javascript' };`;
+
+                obfuscatedCode = JavaScriptObfuscator.obfuscate(code, {
+                    ...NO_ADDITIONAL_NODES_PRESET
+                }).getObfuscatedCode();
+            });
+
+            it('should preserve export all attributes in obfuscated code', () => {
+                assert.match(obfuscatedCode, exportAllAttributesRegExp);
+            });
+        });
+
+        describe('Variant #6: side-effect import with "with" syntax', () => {
+            const sideEffectImportRegExp: RegExp = /import\s*'\.\/styles\.css'\s*with\s*\{\s*type\s*:\s*'css'\s*\}/;
+
+            let obfuscatedCode: string;
+
+            before(() => {
+                const code: string = `import './styles.css' with { type: 'css' };`;
+
+                obfuscatedCode = JavaScriptObfuscator.obfuscate(code, {
+                    ...NO_ADDITIONAL_NODES_PRESET
+                }).getObfuscatedCode();
+            });
+
+            it('should preserve side-effect import attributes in obfuscated code', () => {
+                assert.match(obfuscatedCode, sideEffectImportRegExp);
             });
         });
     });
