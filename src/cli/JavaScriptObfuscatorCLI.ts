@@ -4,10 +4,13 @@ import * as path from 'path';
 
 import { TInputCLIOptions } from '../types/options/TInputCLIOptions';
 import { TInputOptions } from '../types/options/TInputOptions';
+import { TOptionsPreset } from '../types/options/TOptionsPreset';
 
 import { IFileData } from '../interfaces/cli/IFileData';
 import { IInitializable } from '../interfaces/IInitializable';
 import { IObfuscationResult } from '../interfaces/source-code/IObfuscationResult';
+import { ProApiClient } from '../pro-api/ProApiClient';
+import { IProObfuscationResult } from '../interfaces/pro-api/IProApiClient';
 
 import { initializable } from '../decorators/Initializable';
 
@@ -22,11 +25,10 @@ import { StringArrayEncoding } from '../enums/node-transformers/string-array-tra
 import { StringArrayIndexesType } from '../enums/node-transformers/string-array-transformers/StringArrayIndexesType';
 import { StringArrayWrappersType } from '../enums/node-transformers/string-array-transformers/StringArrayWrappersType';
 
-import { DEFAULT_PRESET } from '../options/presets/Default';
-
 import { ArraySanitizer } from './sanitizers/ArraySanitizer';
 import { BooleanSanitizer } from './sanitizers/BooleanSanitizer';
 
+import { Options } from '../options/Options';
 import { CLIUtils } from './utils/CLIUtils';
 import { IdentifierNamesCacheFileUtils } from './utils/IdentifierNamesCacheFileUtils';
 import { JavaScriptObfuscator } from '../JavaScriptObfuscatorFacade';
@@ -34,6 +36,9 @@ import { Logger } from '../logger/Logger';
 import { ObfuscatedCodeFileUtils } from './utils/ObfuscatedCodeFileUtils';
 import { SourceCodeFileUtils } from './utils/SourceCodeFileUtils';
 import { Utils } from '../utils/Utils';
+import { VMTargetFunctionsMode } from '../pro-api/enums/VMTargetFunctionsMode';
+import { VMBytecodeFormat } from '../pro-api/enums/VMBytecodeFormat';
+import { StrictModeSanitizer } from './sanitizers/StrictModeSanitizer';
 
 export class JavaScriptObfuscatorCLI implements IInitializable {
     /**
@@ -107,30 +112,44 @@ export class JavaScriptObfuscatorCLI implements IInitializable {
 
     /**
      * @param {TInputCLIOptions} inputOptions
+     * @param {commander.Command} command
      * @returns {TInputOptions}
      */
-    private static buildOptions(inputOptions: TInputCLIOptions): TInputOptions {
-        const inputCLIOptions: TInputOptions = JavaScriptObfuscatorCLI.filterOptions(inputOptions);
+    private static buildOptions(inputOptions: TInputCLIOptions, command: commander.Command): TInputOptions {
+        const inputCLIOptions: TInputOptions = JavaScriptObfuscatorCLI.filterOptions(inputOptions, command);
         const configFilePath: string | undefined = inputOptions.config;
         const configFileLocation: string = configFilePath ? path.resolve(configFilePath, '.') : '';
         const configFileOptions: TInputOptions = configFileLocation ? CLIUtils.getUserConfig(configFileLocation) : {};
 
+        const presetName: TOptionsPreset =
+            inputCLIOptions.optionsPreset ?? configFileOptions.optionsPreset ?? OptionsPreset.Default;
+        const presetOptions: TInputOptions = Options.getOptionsByPreset(presetName);
+
         return {
-            ...DEFAULT_PRESET,
+            ...presetOptions,
             ...configFileOptions,
             ...inputCLIOptions
         };
     }
 
     /**
+     * Filters out options that were not explicitly set by the user.
+     * Commander.js sets default values for all options, which would
+     * override preset values. Only user-provided options should be kept.
+     *
      * @param {TObject} options
+     * @param {commander.Command} command
      * @returns {TInputOptions}
      */
-    private static filterOptions(options: TInputCLIOptions): TInputOptions {
+    private static filterOptions(options: TInputCLIOptions, command: commander.Command): TInputOptions {
         const filteredOptions: TInputOptions = {};
 
         Object.keys(options).forEach((option: keyof TInputCLIOptions) => {
             if (options[option] === undefined) {
+                return;
+            }
+
+            if (command.getOptionValueSource(String(option)) === 'default') {
                 return;
             }
 
@@ -147,7 +166,7 @@ export class JavaScriptObfuscatorCLI implements IInitializable {
         this.configureHelp();
 
         this.inputPath = path.normalize(this.commands.args[0] || '');
-        this.inputCLIOptions = JavaScriptObfuscatorCLI.buildOptions(this.commands.opts());
+        this.inputCLIOptions = JavaScriptObfuscatorCLI.buildOptions(this.commands.opts(), this.commands);
         this.sourceCodeFileUtils = new SourceCodeFileUtils(this.inputPath, this.inputCLIOptions);
         this.obfuscatedCodeFileUtils = new ObfuscatedCodeFileUtils(this.inputPath, this.inputCLIOptions);
         this.identifierNamesCacheFileUtils = new IdentifierNamesCacheFileUtils(
@@ -155,7 +174,7 @@ export class JavaScriptObfuscatorCLI implements IInitializable {
         );
     }
 
-    public run(): void {
+    public async run(): Promise<void> {
         const canShowHelp: boolean = !this.arguments.length || this.arguments.includes('--help');
 
         if (canShowHelp) {
@@ -166,7 +185,7 @@ export class JavaScriptObfuscatorCLI implements IInitializable {
 
         const sourceCodeData: IFileData[] = this.sourceCodeFileUtils.readSourceCode();
 
-        this.processSourceCodeData(sourceCodeData);
+        await this.processSourceCodeData(sourceCodeData);
     }
 
     private configureCommands(): void {
@@ -210,7 +229,7 @@ export class JavaScriptObfuscatorCLI implements IInitializable {
             )
             .option(
                 '--domain-lock-redirect-url <string>',
-                'Allows the browser to be redirected to a passed URL if the source code isn\'t run on the domains specified by --domain-lock'
+                "Allows the browser to be redirected to a passed URL if the source code isn't run on the domains specified by --domain-lock"
             )
             .option(
                 '--exclude <list> (comma separated, without whitespaces)',
@@ -395,6 +414,153 @@ export class JavaScriptObfuscatorCLI implements IInitializable {
                 'Allows to enable/disable string conversion to unicode escape sequence',
                 BooleanSanitizer
             )
+            .option(
+                '--pro-api-token <string>',
+                'API token for Pro obfuscation via obfuscator.io (enables VM obfuscation via cloud API)'
+            )
+            .option('--pro-api-version <string>', 'Obfuscator version to use with Pro API (e.g., "5.0.0")')
+            .option(
+                '--vm-obfuscation <boolean>',
+                'Enables VM-based bytecode obfuscation for functions',
+                BooleanSanitizer
+            )
+            .option(
+                '--vm-obfuscation-threshold <number>',
+                'The probability that VM obfuscation will be applied to a function (Default: 1, Min: 0, Max: 1)',
+                parseFloat
+            )
+            .option(
+                '--vm-preprocess-identifiers <boolean>',
+                'Preprocesses identifiers before VM transformation (Default: false)',
+                BooleanSanitizer
+            )
+            .option(
+                '--vm-dynamic-opcodes <boolean>',
+                'Dynamically assembles VM dispatcher with shuffled case order and filters unused opcodes based on code analysis',
+                BooleanSanitizer
+            )
+            .option(
+                '--vm-target-functions <list> (comma separated, without whitespaces)',
+                'List of specific function names to apply VM obfuscation to (comma separated)',
+                ArraySanitizer
+            )
+            .option(
+                '--vm-exclude-functions <list> (comma separated, without whitespaces)',
+                'List of function names to exclude from VM obfuscation (comma separated)',
+                ArraySanitizer
+            )
+            .option(
+                '--vm-target-functions-mode <string>',
+                'Controls how functions are selected for VM obfuscation. ' +
+                    `Values: ${CLIUtils.stringifyOptionAvailableValues(VMTargetFunctionsMode)}. ` +
+                    `Default: ${VMTargetFunctionsMode.Root}`
+            )
+            .option(
+                '--vm-wrap-top-level-initializers <boolean>',
+                'Wraps top-level variable initializers in IIFEs so they can be VM-obfuscated (Default: false)',
+                BooleanSanitizer
+            )
+            .option(
+                '--vm-opcode-shuffle <boolean>',
+                'Randomizes the numeric values assigned to each opcode (Default: false)',
+                BooleanSanitizer
+            )
+            .option(
+                '--vm-bytecode-encoding <boolean>',
+                'Enables bytecode encryption with per-function keys (Default: false)',
+                BooleanSanitizer
+            )
+            .option(
+                '--vm-bytecode-array-encoding <boolean>',
+                'Enables encrypted bytecode array with lazy decryption (Default: false)',
+                BooleanSanitizer
+            )
+            .option('--vm-bytecode-array-encoding-key <string>', 'Custom static key for bytecode array encoding')
+            .option(
+                '--vm-bytecode-array-encoding-key-getter <string>',
+                'Custom key getter function code for bytecode array encoding'
+            )
+            .option(
+                '--vm-instruction-shuffle <boolean>',
+                'Shuffles instruction order within basic blocks (Default: false)',
+                BooleanSanitizer
+            )
+            .option(
+                '--vm-jumps-encoding <boolean>',
+                'Enables jump target encoding to prevent CFG reconstruction (Default: false)',
+                BooleanSanitizer
+            )
+            .option(
+                '--vm-decoy-opcodes <boolean>',
+                'Enables insertion of decoy opcodes and dead instructions (Default: false)',
+                BooleanSanitizer
+            )
+            .option(
+                '--vm-dead-code-injection <boolean>',
+                'Enables dead code injection with opaque predicates in bytecode (Default: false)',
+                BooleanSanitizer
+            )
+            .option(
+                '--vm-split-dispatcher <boolean>',
+                'Splits the VM interpreter into multiple category-based dispatchers (Default: false)',
+                BooleanSanitizer
+            )
+            .option(
+                '--vm-macro-ops <boolean>',
+                'Enables macro-op fusion to combine common instruction sequences (Default: false)',
+                BooleanSanitizer
+            )
+            .option(
+                '--vm-debug-protection <boolean>',
+                'Enables anti-debugging measures with state corruption (Default: false)',
+                BooleanSanitizer
+            )
+            .option(
+                '--vm-runtime-opcode-derivation <boolean>',
+                'Enables runtime opcode derivation from seeds instead of static mappings (Default: false)',
+                BooleanSanitizer
+            )
+            .option(
+                '--vm-stateful-opcodes <boolean>',
+                'Enables position-based stateful opcode decoding to prevent pattern matching (Default: false)',
+                BooleanSanitizer
+            )
+            .option(
+                '--vm-stack-encoding <boolean>',
+                'Enables stack value encoding to prevent stack inspection (Default: false)',
+                BooleanSanitizer
+            )
+            .option(
+                '--vm-randomize-keys <boolean>',
+                'Randomizes bytecode property keys to prevent pattern matching (Default: false)',
+                BooleanSanitizer
+            )
+            .option(
+                '--vm-indirect-dispatch <boolean>',
+                'Uses indirect dispatch via handler function table instead of switch statement (Default: false)',
+                BooleanSanitizer
+            )
+            .option(
+                '--vm-compact-dispatcher <boolean>',
+                'Uses a single unified dispatcher for both sync and generator execution, reducing code size (Default: false)',
+                BooleanSanitizer
+            )
+            .option(
+                '--vm-bytecode-format <string>',
+                'Sets the bytecode storage format. ' +
+                    `Values: ${CLIUtils.stringifyOptionAvailableValues(VMBytecodeFormat)}. ` +
+                    `Default: ${VMBytecodeFormat.Binary}`
+            )
+            .option(
+                '--parse-html <boolean>',
+                'Enables obfuscation of JavaScript within HTML <script> tags (Default: false)',
+                BooleanSanitizer
+            )
+            .option(
+                '--strict-mode <boolean | null>',
+                'Allows to specify how the obfuscator should treat code regarding JavaScript strict mode (Default: null)',
+                StrictModeSanitizer
+            )
             .parse(this.rawArguments);
     }
 
@@ -413,20 +579,21 @@ export class JavaScriptObfuscatorCLI implements IInitializable {
     /**
      * @param {IFileData[]} sourceCodeData
      */
-    private processSourceCodeData(sourceCodeData: IFileData[]): void {
-        sourceCodeData.forEach(({ filePath, content }: IFileData, index: number) => {
+    private async processSourceCodeData(sourceCodeData: IFileData[]): Promise<void> {
+        for (let index = 0; index < sourceCodeData.length; index++) {
+            const { filePath, content } = sourceCodeData[index];
             const outputCodePath: string = this.obfuscatedCodeFileUtils.getOutputCodePath(filePath);
 
             try {
                 Logger.log(Logger.colorInfo, LoggingPrefix.CLI, `Obfuscating file: ${filePath}...`);
 
-                this.processSourceCode(content, filePath, outputCodePath, index);
+                await this.processSourceCode(content, filePath, outputCodePath, index);
             } catch (error) {
                 Logger.log(Logger.colorInfo, LoggingPrefix.CLI, `Error in file: ${filePath}...`);
 
                 throw error;
             }
-        });
+        }
     }
 
     /**
@@ -435,12 +602,12 @@ export class JavaScriptObfuscatorCLI implements IInitializable {
      * @param {string} outputCodePath
      * @param {number | null} sourceCodeIndex
      */
-    private processSourceCode(
+    private async processSourceCode(
         sourceCode: string,
         inputCodePath: string,
         outputCodePath: string,
         sourceCodeIndex: number | null
-    ): void {
+    ): Promise<void> {
         const options: TInputOptions = {
             ...this.inputCLIOptions,
             identifierNamesCache: this.identifierNamesCacheFileUtils.readFile(),
@@ -453,10 +620,54 @@ export class JavaScriptObfuscatorCLI implements IInitializable {
             })
         };
 
+        // Use Pro API if token is provided and Pro features are enabled
+        const proApiToken = this.inputCLIOptions.proApiToken;
+
+        if (proApiToken) {
+            await this.processSourceCodeWithProApi(sourceCode, outputCodePath, options, proApiToken);
+
+            return;
+        }
+
         if (options.sourceMap) {
             this.processSourceCodeWithSourceMap(sourceCode, outputCodePath, options);
         } else {
             this.processSourceCodeWithoutSourceMap(sourceCode, outputCodePath, options);
+        }
+    }
+
+    /**
+     * Process source code using Pro API (cloud-based VM obfuscation)
+     */
+    private async processSourceCodeWithProApi(
+        sourceCode: string,
+        outputCodePath: string,
+        options: TInputOptions,
+        apiToken: string
+    ): Promise<void> {
+        const proApiVersion = this.inputCLIOptions.proApiVersion;
+
+        const client = new ProApiClient({
+            apiToken,
+            version: proApiVersion
+        });
+
+        const result: IProObfuscationResult = await client.obfuscate(sourceCode, options, (message: string) => {
+            Logger.log(Logger.colorInfo, LoggingPrefix.CLI, message);
+        });
+
+        this.obfuscatedCodeFileUtils.writeFile(outputCodePath, result.getObfuscatedCode());
+
+        // Write source map if enabled and available
+        if (options.sourceMap && result.getSourceMap()) {
+            const outputSourceMapPath: string = this.obfuscatedCodeFileUtils.getOutputSourceMapPath(
+                outputCodePath,
+                options.sourceMapFileName ?? ''
+            );
+
+            if (options.sourceMapMode === SourceMapMode.Separate) {
+                this.obfuscatedCodeFileUtils.writeFile(outputSourceMapPath, result.getSourceMap());
+            }
         }
     }
 

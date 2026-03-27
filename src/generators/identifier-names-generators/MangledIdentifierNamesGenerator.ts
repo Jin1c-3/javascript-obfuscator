@@ -96,22 +96,15 @@ export class MangledIdentifierNamesGenerator extends AbstractIdentifierNamesGene
      * @returns {string}
      */
     public generateForGlobalScope(nameLength?: number): string {
-        const prefix: string = this.options.identifiersPrefix ? `${this.options.identifiersPrefix}` : '';
+        return this.generateForGlobalScopeInternal((name) => this.isValidIdentifierName(name));
+    }
 
-        const identifierName: string = this.generateNewMangledName(
-            this.lastMangledName,
-            (newIdentifierName: string) => {
-                const identifierNameWithPrefix: string = `${prefix}${newIdentifierName}`;
-
-                return this.isValidIdentifierName(identifierNameWithPrefix);
-            }
-        );
-        const identifierNameWithPrefix: string = `${prefix}${identifierName}`;
-
-        this.updatePreviousMangledName(identifierName);
-        this.preserveName(identifierNameWithPrefix);
-
-        return identifierNameWithPrefix;
+    /**
+     * @param {number} nameLength
+     * @returns {string}
+     */
+    public generateForGlobalScopeWithAllScopesValidation(nameLength?: number): string {
+        return this.generateForGlobalScopeInternal((name) => this.isValidIdentifierNameInAllScopes(name));
     }
 
     /**
@@ -289,14 +282,51 @@ export class MangledIdentifierNamesGenerator extends AbstractIdentifierNamesGene
         };
 
         let identifierName: string = previousMangledName;
-        let isValidIdentifierName: boolean;
+        let isValidIdentifierName: boolean = false;
+        let reservedNameAttempts: number = 0;
 
         do {
             identifierName = generateNewMangledName(identifierName);
+
+            if (
+                this.preservedNamesSet.has(identifierName) ||
+                MangledIdentifierNamesGenerator.reservedNamesSet.has(identifierName)
+            ) {
+                continue;
+            }
+
             isValidIdentifierName = validationFunction?.(identifierName) ?? this.isValidIdentifierName(identifierName);
+
+            if (!isValidIdentifierName) {
+                this.checkGenerationAttempts(reservedNameAttempts);
+                reservedNameAttempts++;
+            }
         } while (!isValidIdentifierName);
 
         return identifierName;
+    }
+
+    /**
+     * @param {(name: string) => boolean} validationFn
+     * @returns {string}
+     */
+    private generateForGlobalScopeInternal(validationFn: (name: string) => boolean): string {
+        const prefix: string = this.options.identifiersPrefix ? `${this.options.identifiersPrefix}` : '';
+
+        const identifierName: string = this.generateNewMangledName(
+            this.lastMangledName,
+            (newIdentifierName: string) => {
+                const identifierNameWithPrefix: string = `${prefix}${newIdentifierName}`;
+
+                return validationFn(identifierNameWithPrefix);
+            }
+        );
+        const identifierNameWithPrefix: string = `${prefix}${identifierName}`;
+
+        this.updatePreviousMangledName(identifierName);
+        this.preserveName(identifierNameWithPrefix);
+
+        return identifierNameWithPrefix;
     }
 
     /**

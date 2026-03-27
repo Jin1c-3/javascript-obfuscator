@@ -124,10 +124,8 @@ export class ObjectExpressionKeysTransformer extends AbstractNodeTransformer {
                 objectExpressionNode,
                 objectExpressionParentNode
             ) ||
-            ObjectExpressionKeysTransformer.isProhibitedSequenceExpression(
-                objectExpressionNode,
-                objectExpressionHostStatement
-            )
+            ObjectExpressionKeysTransformer.isProhibitedSequenceExpression(objectExpressionNode) ||
+            ObjectExpressionKeysTransformer.isProhibitedLoopBody(objectExpressionNode)
         ) {
             return true;
         }
@@ -138,6 +136,39 @@ export class ObjectExpressionKeysTransformer extends AbstractNodeTransformer {
         );
 
         return hasReferencedIdentifier || hasCallExpression;
+    }
+
+    /**
+     * @param {ObjectExpression} objectExpressionNode
+     * @returns {boolean}
+     */
+    private static isProhibitedLoopBody(objectExpressionNode: ESTree.ObjectExpression): boolean {
+        let currentNode: ESTree.Node | undefined = objectExpressionNode;
+
+        while (currentNode) {
+            const parentNode: ESTree.Node | undefined = currentNode.parentNode;
+
+            if (!parentNode || parentNode === currentNode) {
+                break;
+            }
+
+            const isNonBlockLoopBody: boolean =
+                NodeGuards.isLoopStatementNode(parentNode) &&
+                parentNode.body === currentNode &&
+                !NodeGuards.isBlockStatementNode(currentNode);
+
+            if (isNonBlockLoopBody) {
+                return true;
+            }
+
+            if (NodeGuards.isFunctionNode(parentNode) || NodeGuards.isProgramNode(parentNode)) {
+                break;
+            }
+
+            currentNode = parentNode;
+        }
+
+        return false;
     }
 
     /**
@@ -157,21 +188,73 @@ export class ObjectExpressionKeysTransformer extends AbstractNodeTransformer {
 
     /**
      * @param {ObjectExpression} objectExpressionNode
-     * @param {Node} objectExpressionHostNode
      * @returns {boolean}
      */
-    private static isProhibitedSequenceExpression(
-        objectExpressionNode: ESTree.ObjectExpression,
-        objectExpressionHostNode: ESTree.Node
-    ): boolean {
-        return (
-            NodeGuards.isExpressionStatementNode(objectExpressionHostNode) &&
-            NodeGuards.isSequenceExpressionNode(objectExpressionHostNode.expression) &&
-            objectExpressionHostNode.expression.expressions.some(
-                (expressionNode: ESTree.Expression) =>
-                    NodeGuards.isCallExpressionNode(expressionNode) && NodeGuards.isSuperNode(expressionNode.callee)
-            )
-        );
+    private static isProhibitedSequenceExpression(objectExpressionNode: ESTree.ObjectExpression): boolean {
+        const parentNode: ESTree.Node | undefined = objectExpressionNode.parentNode;
+
+        if (!parentNode) {
+            return false;
+        }
+
+        // Case 1: object is a direct child of a sequence expression
+        // e.g. `return aux(ys), { min }`
+        if (NodeGuards.isSequenceExpressionNode(parentNode)) {
+            const index: number = parentNode.expressions.indexOf(objectExpressionNode);
+
+            return index > 0;
+        }
+
+        // Case 2: object is nested inside a sequence expression via assignment/etc
+        // e.g. `super(), this.state = { foo: 1 }`
+        // Walk up to find if we're inside a sequence expression at a non-first position
+        let currentNode: ESTree.Node = parentNode;
+
+        while (currentNode.parentNode) {
+            const currentParent: ESTree.Node = currentNode.parentNode;
+
+            if (NodeGuards.isSequenceExpressionNode(currentParent)) {
+                const index: number = currentParent.expressions.indexOf(<ESTree.Expression>currentNode);
+
+                if (index > 0) {
+                    // Only prohibit if earlier expressions contain calls (side effects)
+                    return currentParent.expressions.slice(0, index).some(
+                        (expr: ESTree.Expression) => {
+                            let hasCall: boolean = false;
+
+                            estraverse.traverse(expr, {
+                                enter: (node: ESTree.Node) => {
+                                    if (
+                                        NodeGuards.isCallExpressionNode(node) ||
+                                        NodeGuards.isNewExpressionNode(node)
+                                    ) {
+                                        hasCall = true;
+
+                                        return estraverse.VisitorOption.Break;
+                                    }
+                                }
+                            });
+
+                            return hasCall;
+                        }
+                    );
+                }
+
+                return false;
+            }
+
+            if (
+                NodeGuards.isFunctionNode(currentParent) ||
+                NodeGuards.isProgramNode(currentParent) ||
+                NodeGuards.isBlockStatementNode(currentParent)
+            ) {
+                break;
+            }
+
+            currentNode = currentParent;
+        }
+
+        return false;
     }
 
     /**

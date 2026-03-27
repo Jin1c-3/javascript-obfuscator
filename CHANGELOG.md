@@ -1,5 +1,48 @@
 Change Log
 
+v5.4.1
+---
+* Fixed `Utils.nodeRequire` causing `ReferenceError: require is not defined` in browser build by making it lazy-evaluated
+* Fixed missing space between keywords (`return`, `throw`, `typeof`) and Unicode surrogate pair identifiers in compact mode. Fixes https://github.com/javascript-obfuscator/javascript-obfuscator/issues/1112
+* Fixed `domainLock` being case-sensitive — domain values are now normalized to lowercase. Fixes https://github.com/javascript-obfuscator/javascript-obfuscator/issues/1182
+* Removed `source-map-support` runtime dependency. Use `node --enable-source-maps` instead. Fixes https://github.com/javascript-obfuscator/javascript-obfuscator/issues/1149
+
+v5.4.0
+---
+* Add support for `import attributes`. Fixes https://github.com/javascript-obfuscator/javascript-obfuscator/issues/1256
+* Add `renameProperties` support for private class fields and methods (`#foo`, `#bar()`). Fixes https://github.com/javascript-obfuscator/javascript-obfuscator/issues/1220
+* Fixed `reservedNames` not preserving class method and property names when `stringArray` or `deadCodeInjection` is enabled. Fixes https://github.com/javascript-obfuscator/javascript-obfuscator/issues/1279
+* Fixed infinite loop / stack overflow when `reservedNames` patterns match all generated identifier names. Now throws a descriptive error instead. Fixes https://github.com/javascript-obfuscator/javascript-obfuscator/issues/1382
+* Fixed `transformObjectKeys` changing evaluation order when object expression is inside a sequence expression with preceding side effects (e.g. `return aux(ys), { min }`). Fixes https://github.com/javascript-obfuscator/javascript-obfuscator/issues/1246
+* Fixed destructuring patterns inside class static blocks not being renamed when `renameGlobals` is disabled. Fixes https://github.com/javascript-obfuscator/javascript-obfuscator/issues/1141
+* Fixed CLI `--options-preset` not applying preset values for options not explicitly set via command line (e.g. `splitStrings` from `high-obfuscation` preset was ignored). Fixes https://github.com/javascript-obfuscator/javascript-obfuscator/issues/1236
+* Replaced `mkdirp` dependency with native `fs.mkdirSync({ recursive: true })`. Fixes https://github.com/javascript-obfuscator/javascript-obfuscator/issues/1275. Thank you https://github.com/roli-lpci!
+* Updated reserved DOM properties list, fixing `renameProperties` breaking modern built-in methods like `Array.prototype.at()`. Fixes https://github.com/javascript-obfuscator/javascript-obfuscator/issues/1066
+* Replaced `conf` dependency with custom implementation using `env-paths` and native `fs`
+
+v5.3.1
+---
+* Fixed class expression name references inside class body being incorrectly resolved to an import binding with the same name, causing broken code at runtime. Fixes https://github.com/javascript-obfuscator/javascript-obfuscator/issues/1386
+
+v5.3.0
+---
+* Add Pro API support to CLI
+* Add large files upload support to Pro API
+
+v5.2.1
+---
+* Fixed `transformObjectKeys` incorrectly hoisting object literal outside of loop when loop body is a single statement without braces, causing all iterations to share the same object reference. Fixes https://github.com/javascript-obfuscator/javascript-obfuscator/issues/1300
+* Fixed parsing error when `await` is used as an identifier in non-async context. Fixes https://github.com/javascript-obfuscator/javascript-obfuscator/issues/1127
+* Fixed `deadCodeInjection` causing SyntaxError when `arguments` from collected block statements was injected into class field initializers or static initialization blocks. Fixes https://github.com/javascript-obfuscator/javascript-obfuscator/issues/1166
+* Fixed `transformObjectKeys` with `mangled` identifier generator causing variable shadowing when extracted object variable name matched an existing inner scope variable. Fixes https://github.com/javascript-obfuscator/javascript-obfuscator/issues/1232
+
+v5.2.0
+---
+* Skip obfuscation of `process.env.*`
+* Fixed `controlFlowFlattening` breaking short-circuit evaluation with spread operator and conditional objects. Fixes https://github.com/javascript-obfuscator/javascript-obfuscator/issues/1372
+* Fix Annex B function hoisting: block-scoped function declarations are now correctly linked to references outside the block in non-strict mode
+* Fixed `NodeUtils.cloneRecursive` corrupting `range` property when cloning AST nodes, causing scope analysis to incorrectly resolve destructuring default parameter references
+
 v5.1.0
 ---
 * Add `version` parameter to the `apiConfig` to use different versions JavaScript Obfuscator Pro via API

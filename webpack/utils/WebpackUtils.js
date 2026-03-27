@@ -1,7 +1,6 @@
 const fs = require('fs');
 
-const copyright = 'Copyright (C) 2016-2024 Timofey Kachalov <sanex3339@yandex.ru>';
-const sourceMapSupportRequire = 'require("source-map-support").install();';
+const copyright = 'Copyright (C) 2016-2026 Timofei Kachalov <support@obfuscator.io>';
 
 class WebpackUtils {
     /**
@@ -21,9 +20,6 @@ class WebpackUtils {
             fs.readFileSync('./LICENSE.BSD', 'utf8') + "\n*/";
     }
 
-    static getSourceMapSupportImport () {
-        return sourceMapSupportRequire;
-    }
 }
 
 module.exports.WebpackUtils = WebpackUtils;
