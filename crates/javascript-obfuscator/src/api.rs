@@ -299,4 +299,38 @@ mod tests {
 
         assert!(result.code.contains("tag`abc ${foo}`"));
     }
+
+    #[test]
+    fn obfuscate_transforms_object_expression_identifier_key() {
+        let result = obfuscate(
+            "const value = {foo: 1};",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("const value={'foo':0x1}"));
+    }
+
+    #[test]
+    fn obfuscate_transforms_object_expression_shorthand_property() {
+        let result = obfuscate(
+            "const value = {foo};",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("const value={'foo':foo}"));
+    }
 }
