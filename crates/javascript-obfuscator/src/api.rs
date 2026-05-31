@@ -264,4 +264,39 @@ mod tests {
 
         assert!(result.code.contains("const value=console.log"));
     }
+
+    #[test]
+    fn obfuscate_transforms_template_literal_with_expression() {
+        let result = obfuscate(
+            "const value = `abc ${foo}`;",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("const value='abc\\x20'+foo"));
+        assert!(!result.code.contains('`'));
+    }
+
+    #[test]
+    fn obfuscate_keeps_tagged_template_literal() {
+        let result = obfuscate(
+            "tag`abc ${foo}`;",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("tag`abc ${foo}`"));
+    }
 }
