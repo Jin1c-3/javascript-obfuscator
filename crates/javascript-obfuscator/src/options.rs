@@ -15,6 +15,8 @@ pub struct Options {
     #[serde(default)]
     pub rename_globals: Option<bool>,
     #[serde(default)]
+    pub property_bracketing: Option<bool>,
+    #[serde(default)]
     pub source_map: Option<bool>,
     #[serde(default)]
     pub input_file_name: Option<String>,

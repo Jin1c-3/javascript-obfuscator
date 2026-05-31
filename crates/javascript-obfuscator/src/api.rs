@@ -70,6 +70,7 @@ mod tests {
                 compact: Some(true),
                 string_array: Some(false),
                 rename_globals: Some(false),
+                property_bracketing: Some(false),
                 ..Options::default()
             },
         )
@@ -228,5 +229,39 @@ mod tests {
         .expect("obfuscation should succeed");
 
         assert!(result.code.contains("const value=0xan"));
+    }
+
+    #[test]
+    fn obfuscate_transforms_member_expression_dot_notation() {
+        let result = obfuscate(
+            "const value = console.log;",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(true),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("const value=console['log']"));
+    }
+
+    #[test]
+    fn obfuscate_keeps_member_expression_dot_notation_when_disabled() {
+        let result = obfuscate(
+            "const value = console.log;",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("const value=console.log"));
     }
 }
