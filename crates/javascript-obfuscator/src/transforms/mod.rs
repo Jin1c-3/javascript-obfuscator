@@ -3,6 +3,7 @@ pub mod class_fields;
 pub mod directive_placement;
 pub mod escape_sequences;
 pub mod export_specifiers;
+pub mod labeled_statements;
 pub mod member_expressions;
 pub mod number_literals;
 pub mod object_expressions;
@@ -36,6 +37,12 @@ pub fn apply_transforms(program: &mut Program, options: &Options) {
     member_expressions::transform_member_expressions(
         program,
         options.property_bracketing.unwrap_or(true),
+    );
+    labeled_statements::transform_labeled_statements(
+        program,
+        options.identifier_names_generator.unwrap_or_default(),
+        options.identifiers_prefix.as_deref().unwrap_or(""),
+        options.identifiers_dictionary.as_deref().unwrap_or(&[]),
     );
     escape_sequences::transform_escape_sequences(
         program,

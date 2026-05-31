@@ -549,4 +549,43 @@ mod tests {
             .code
             .contains("function run(){'use strict';const value='hello\\x20world';}"));
     }
+
+    #[test]
+    fn obfuscate_renames_labeled_statement_and_matching_references() {
+        let result = obfuscate(
+            "label: for (;;) { continue label; break label; }",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result
+            .code
+            .contains("_0x0:for(;;){continue _0x0;break _0x0;}"));
+    }
+
+    #[test]
+    fn obfuscate_renames_labeled_statement_with_mangled_generator() {
+        let result = obfuscate(
+            "label: for (;;) { break label; }",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                identifier_names_generator: Some(
+                    crate::generators::IdentifierNamesGeneratorKind::Mangled,
+                ),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("a:for(;;){break a;}"));
+    }
 }
