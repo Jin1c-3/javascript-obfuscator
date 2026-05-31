@@ -333,4 +333,38 @@ mod tests {
 
         assert!(result.code.contains("const value={'foo':foo}"));
     }
+
+    #[test]
+    fn obfuscate_transforms_class_method_identifier_key() {
+        let result = obfuscate(
+            "class Foo { bar() {} }",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("class Foo{['bar'](){}}"));
+    }
+
+    #[test]
+    fn obfuscate_transforms_class_property_identifier_key() {
+        let result = obfuscate(
+            "class Foo { property = 1; }",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("class Foo{['property']=0x1;}"));
+    }
 }

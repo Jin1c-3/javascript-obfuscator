@@ -17,6 +17,8 @@ pub struct Options {
     #[serde(default)]
     pub property_bracketing: Option<bool>,
     #[serde(default)]
+    pub reserved_names: Option<Vec<String>>,
+    #[serde(default)]
     pub source_map: Option<bool>,
     #[serde(default)]
     pub input_file_name: Option<String>,
