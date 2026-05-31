@@ -837,4 +837,53 @@ mod tests {
 
         assert!(result.code.contains("eval('~');"), "{}", result.code);
     }
+
+    #[test]
+    fn obfuscate_keeps_reserved_string_literals_unescaped() {
+        let result = obfuscate(
+            "const foo = 'foo'; const bar = 'bar';",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                reserved_strings: Some(vec!["foo".to_string()]),
+                unicode_escape_sequence: Some(true),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("const foo='foo';"), "{}", result.code);
+        assert!(
+            result.code.contains("const bar='\\x62\\x61\\x72';"),
+            "{}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn obfuscate_keeps_reserved_string_with_special_characters_unescaped() {
+        let result = obfuscate(
+            "var foo = 'bar'; var baz = 'Cannot find module \\'foo\\'';",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                reserved_strings: Some(vec!["Cannot find module".to_string()]),
+                unicode_escape_sequence: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(
+            result
+                .code
+                .contains("var baz='Cannot find module \\'foo\\'';"),
+            "{}",
+            result.code
+        );
+    }
 }

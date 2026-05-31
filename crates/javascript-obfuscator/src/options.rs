@@ -23,6 +23,8 @@ pub struct Options {
     #[serde(default)]
     pub reserved_names: Option<Vec<String>>,
     #[serde(default)]
+    pub reserved_strings: Option<Vec<String>>,
+    #[serde(default)]
     pub split_strings: Option<bool>,
     #[serde(default)]
     pub split_strings_chunk_length: Option<usize>,

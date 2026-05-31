@@ -74,6 +74,7 @@ pub fn apply_transforms(program: &mut Program, options: &Options) {
     escape_sequences::transform_escape_sequences(
         program,
         options.unicode_escape_sequence.unwrap_or(false),
+        options.reserved_strings.as_deref().unwrap_or(&[]),
     );
     directive_placement::transform_directive_placement(program);
 }

@@ -81,7 +81,7 @@ mod tests {
 
     fn transform(source_code: &str) -> String {
         let mut parsed_program = parse_program(source_code).expect("source should parse");
-        transform_escape_sequences(&mut parsed_program.program, false);
+        transform_escape_sequences(&mut parsed_program.program, false, &[]);
         transform_directive_placement(&mut parsed_program.program);
         generate_code(&parsed_program.program, parsed_program.source_map, true)
             .expect("code should generate")
