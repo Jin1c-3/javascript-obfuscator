@@ -6,6 +6,7 @@ pub mod export_specifiers;
 pub mod labeled_statements;
 pub mod member_expressions;
 pub mod number_literals;
+pub mod number_to_expressions;
 pub mod object_expressions;
 pub mod object_pattern_properties;
 pub mod split_strings;
@@ -23,6 +24,10 @@ pub fn apply_transforms(program: &mut Program, options: &Options) {
     template_literals::transform_template_literals(program);
     boolean_literals::transform_boolean_literals(program);
     number_literals::transform_number_literals(program);
+    number_to_expressions::transform_number_to_expressions(
+        program,
+        options.numbers_to_expressions.unwrap_or(false),
+    );
     class_fields::transform_class_fields(program, options.reserved_names.as_deref().unwrap_or(&[]));
     object_pattern_properties::transform_object_pattern_properties(
         program,

@@ -1,4 +1,4 @@
-use swc_ecma_ast::{Lit, Program};
+use swc_ecma_ast::{Lit, Program, PropName};
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 pub fn transform_number_literals(program: &mut Program) {
@@ -10,20 +10,32 @@ struct NumberLiteralTransform;
 impl VisitMut for NumberLiteralTransform {
     fn visit_mut_lit(&mut self, literal: &mut Lit) {
         match literal {
-            Lit::Num(number) if should_emit_hex_number(number.value) => {
-                let integer = number.value.abs() as u128;
-                number.raw = Some(format!("0x{integer:x}").into());
-            }
+            Lit::Num(number) => transform_number_raw(number),
             Lit::BigInt(bigint) => {
                 bigint.raw = Some(format!("0x{}n", bigint.value.to_str_radix(16)).into());
             }
             _ => {}
         }
     }
+
+    fn visit_mut_prop_name(&mut self, property_name: &mut PropName) {
+        if let PropName::Num(number) = property_name {
+            transform_number_raw(number);
+        }
+    }
 }
 
 fn should_emit_hex_number(value: f64) -> bool {
     value.is_finite() && value.fract() == 0.0
+}
+
+fn transform_number_raw(number: &mut swc_ecma_ast::Number) {
+    if !should_emit_hex_number(number.value) {
+        return;
+    }
+
+    let integer = number.value.abs() as u128;
+    number.raw = Some(format!("0x{integer:x}").into());
 }
 
 #[cfg(test)]
@@ -60,5 +72,12 @@ mod tests {
         let code = transform("const value = 10n;");
 
         assert!(code.contains("const value=0xan"), "{code}");
+    }
+
+    #[test]
+    fn transforms_numeric_property_key_raw_value() {
+        let code = transform("const value = {1: 'bar'};");
+
+        assert!(code.contains("const value={0x1:'bar'}"), "{code}");
     }
 }

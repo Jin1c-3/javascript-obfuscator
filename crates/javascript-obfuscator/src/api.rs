@@ -588,4 +588,40 @@ mod tests {
 
         assert!(result.code.contains("a:for(;;){break a;}"));
     }
+
+    #[test]
+    fn obfuscate_transforms_number_to_expression_when_enabled() {
+        let result = obfuscate(
+            "const value = 10;",
+            Options {
+                compact: Some(true),
+                numbers_to_expressions: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("const value=0xb-0x1"));
+    }
+
+    #[test]
+    fn obfuscate_keeps_number_literal_when_numbers_to_expressions_disabled() {
+        let result = obfuscate(
+            "const value = 10;",
+            Options {
+                compact: Some(true),
+                numbers_to_expressions: Some(false),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("const value=0xa"));
+    }
 }
