@@ -1,5 +1,6 @@
 pub mod boolean_literals;
 pub mod class_fields;
+pub mod escape_sequences;
 pub mod export_specifiers;
 pub mod member_expressions;
 pub mod number_literals;
@@ -34,5 +35,9 @@ pub fn apply_transforms(program: &mut Program, options: &Options) {
     member_expressions::transform_member_expressions(
         program,
         options.property_bracketing.unwrap_or(true),
+    );
+    escape_sequences::transform_escape_sequences(
+        program,
+        options.unicode_escape_sequence.unwrap_or(false),
     );
 }

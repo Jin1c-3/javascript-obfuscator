@@ -23,6 +23,8 @@ pub struct Options {
     #[serde(default)]
     pub split_strings_chunk_length: Option<usize>,
     #[serde(default)]
+    pub unicode_escape_sequence: Option<bool>,
+    #[serde(default)]
     pub source_map: Option<bool>,
     #[serde(default)]
     pub input_file_name: Option<String>,

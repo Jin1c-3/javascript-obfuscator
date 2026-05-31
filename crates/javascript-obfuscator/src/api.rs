@@ -473,4 +473,40 @@ mod tests {
 
         assert!(result.code.contains("const{foo}=source"));
     }
+
+    #[test]
+    fn obfuscate_encodes_all_string_literal_characters_when_unicode_escape_sequence_enabled() {
+        let result = obfuscate(
+            "const value = 'test';",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                unicode_escape_sequence: Some(true),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("const value='\\x74\\x65\\x73\\x74'"));
+    }
+
+    #[test]
+    fn obfuscate_encodes_forced_string_literal_characters_when_unicode_escape_sequence_disabled() {
+        let result = obfuscate(
+            "const value = 'hello world';",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                unicode_escape_sequence: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("const value='hello\\x20world'"));
+    }
 }
