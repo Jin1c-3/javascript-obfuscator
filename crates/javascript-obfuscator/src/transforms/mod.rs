@@ -12,6 +12,7 @@ pub mod object_expressions;
 pub mod object_pattern_properties;
 pub mod split_strings;
 pub mod template_literals;
+pub mod variable_declarations_merge;
 
 use swc_ecma_ast::Program;
 
@@ -51,6 +52,10 @@ pub fn apply_transforms(program: &mut Program, options: &Options) {
         options.identifiers_dictionary.as_deref().unwrap_or(&[]),
     );
     expression_statements_merge::transform_expression_statements_merge(
+        program,
+        options.simplify.unwrap_or(false),
+    );
+    variable_declarations_merge::transform_variable_declarations_merge(
         program,
         options.simplify.unwrap_or(false),
     );
