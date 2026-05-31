@@ -10,7 +10,6 @@ import { TOptionsPreset } from './types/options/TOptionsPreset';
 import { IInversifyContainerFacade } from './interfaces/container/IInversifyContainerFacade';
 import { IJavaScriptObfuscator } from './interfaces/IJavaScriptObfsucator';
 import { IObfuscationResult } from './interfaces/source-code/IObfuscationResult';
-import { IProApiConfig, IProObfuscationResult, TProApiProgressCallback } from './interfaces/pro-api/IProApiClient';
 
 import { InversifyContainerFacade } from './container/InversifyContainerFacade';
 import { Options } from './options/Options';
@@ -88,38 +87,6 @@ class JavaScriptObfuscatorFacade {
     public static getOptionsByPreset(optionsPreset: TOptionsPreset): TInputOptions {
         return Options.getOptionsByPreset(optionsPreset);
     }
-
-    /**
-     * Obfuscate code using the Pro API (obfuscator.io)
-     * This method requires a valid API token from obfuscator.io and only works with VM obfuscation.
-     * Only available in Node.js environment.
-     *
-     * @param {string} sourceCode - Source code to obfuscate
-     * @param {TInputOptions} inputOptions - Obfuscation options (must include vmObfuscation: true)
-     * @param {IProApiConfig} proApiConfig - Pro API configuration including API token
-     * @param {TProApiProgressCallback} onProgress - Optional callback for progress updates (streaming mode only)
-     * @returns {Promise<IProObfuscationResult>} - Promise resolving to obfuscation result
-     * @throws {ApiError} - If API returns an error or vmObfuscation is not enabled
-     */
-    public static async obfuscatePro(
-        sourceCode: string,
-        inputOptions: TInputOptions,
-        proApiConfig: IProApiConfig,
-        onProgress?: TProApiProgressCallback
-    ): Promise<IProObfuscationResult> {
-        if (typeof window !== 'undefined') {
-            const { ApiError } = await import('./pro-api/ApiError');
-
-            throw new ApiError('obfuscatePro is only available in Node.js environment', 500);
-        }
-
-        const { ProApiClient } = await import('./pro-api/ProApiClient');
-        const client = new ProApiClient(proApiConfig);
-
-        return client.obfuscate(sourceCode, inputOptions, onProgress);
-    }
 }
 
 export { JavaScriptObfuscatorFacade as JavaScriptObfuscator };
-export { ApiError } from './pro-api/ApiError';
-export type { IProApiConfig, IProObfuscationResult, TProApiProgressCallback } from './interfaces/pro-api/IProApiClient';

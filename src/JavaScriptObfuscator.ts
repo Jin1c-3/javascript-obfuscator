@@ -28,7 +28,6 @@ import { ecmaVersion } from './constants/EcmaVersion';
 import { ASTParserFacade } from './ASTParserFacade';
 import { NodeGuards } from './node/NodeGuards';
 import { Utils } from './utils/Utils';
-import { AdvertisementUtils } from './utils/AdvertisementUtils';
 
 @injectable()
 export class JavaScriptObfuscator implements IJavaScriptObfuscator {
@@ -158,11 +157,6 @@ export class JavaScriptObfuscator implements IJavaScriptObfuscator {
      * @returns {IObfuscationResult}
      */
     public obfuscate(sourceCode: string): IObfuscationResult {
-        if (AdvertisementUtils.shouldShowAdvertisement()) {
-            this.logger.advertise(LoggingMessage.JavaScriptObfuscatorProAdFirstPart);
-            this.logger.advertise(LoggingMessage.JavaScriptObfuscatorProAdSecondPart);
-        }
-
         if (typeof sourceCode !== 'string') {
             sourceCode = '';
         }
