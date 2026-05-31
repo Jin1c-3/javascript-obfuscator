@@ -1,0 +1,14 @@
+[package]
+name = "javascript-obfuscator"
+version = "5.4.3"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "javascript_obfuscator"
+path = "src/lib.rs"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
