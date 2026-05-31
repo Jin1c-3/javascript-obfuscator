@@ -2,6 +2,7 @@ use crate::codegen::generate_code;
 use crate::diagnostics::ObfuscatorResult;
 use crate::options::{ObfuscationResult, Options};
 use crate::parser::parse_program;
+use crate::storages::normalize_identifier_names_cache;
 
 pub fn run_pipeline(source_code: &str, options: Options) -> ObfuscatorResult<ObfuscationResult> {
     let (hashbang, prepared_code) = extract_hashbang(source_code);
@@ -22,10 +23,12 @@ pub fn run_pipeline(source_code: &str, options: Options) -> ObfuscatorResult<Obf
         String::new()
     };
 
+    let identifier_names_cache = normalize_identifier_names_cache(options.identifier_names_cache);
+
     Ok(ObfuscationResult::new(
         code,
         source_map,
-        options.identifier_names_cache,
+        identifier_names_cache,
     ))
 }
 

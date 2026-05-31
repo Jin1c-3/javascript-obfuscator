@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde_json::{json, Value};
 
-use crate::diagnostics::{ObfuscatorError, ObfuscatorResult};
+use crate::diagnostics::ObfuscatorResult;
 use crate::options::{ObfuscationResult, Options, Preset};
 use crate::pipeline::run_pipeline;
 
@@ -14,14 +14,20 @@ pub fn obfuscate_multiple(
     source_codes: BTreeMap<String, String>,
     options: Options,
 ) -> ObfuscatorResult<BTreeMap<String, ObfuscationResult>> {
-    source_codes
-        .into_iter()
-        .map(|(file_name, source_code)| {
-            let result = obfuscate(&source_code, options.clone())?;
+    let mut output = BTreeMap::new();
+    let mut next_options = options;
 
-            Ok((file_name, result))
-        })
-        .collect::<Result<_, ObfuscatorError>>()
+    for (file_name, source_code) in source_codes {
+        let result = obfuscate(&source_code, next_options.clone())?;
+
+        if result.identifier_names_cache.is_some() {
+            next_options.identifier_names_cache = result.identifier_names_cache.clone();
+        }
+
+        output.insert(file_name, result);
+    }
+
+    Ok(output)
 }
 
 pub fn get_options_by_preset(preset: Preset) -> Value {
@@ -111,5 +117,50 @@ mod tests {
         assert!(result.contains_key("second.js"));
         assert!(result["first.js"].code.contains("first"));
         assert!(result["second.js"].code.contains("second"));
+    }
+
+    #[test]
+    fn obfuscate_normalizes_identifier_names_cache() {
+        let result = obfuscate(
+            "const value = 1;",
+            Options {
+                identifier_names_cache: Some(serde_json::Map::new()),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        let cache = result
+            .identifier_names_cache
+            .expect("cache should be returned when option is provided");
+
+        assert_eq!(cache.get("globalIdentifiers"), Some(&json!({})));
+        assert_eq!(cache.get("propertyIdentifiers"), Some(&json!({})));
+    }
+
+    #[test]
+    fn obfuscate_multiple_preserves_normalized_identifier_cache() {
+        let mut input = BTreeMap::new();
+        input.insert("first.js".to_string(), "const first = 1;".to_string());
+        input.insert("second.js".to_string(), "const second = 2;".to_string());
+
+        let result = obfuscate_multiple(
+            input,
+            Options {
+                identifier_names_cache: Some(serde_json::Map::new()),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        for obfuscation_result in result.values() {
+            let cache = obfuscation_result
+                .identifier_names_cache
+                .as_ref()
+                .expect("cache should be returned for every file");
+
+            assert_eq!(cache.get("globalIdentifiers"), Some(&json!({})));
+            assert_eq!(cache.get("propertyIdentifiers"), Some(&json!({})));
+        }
     }
 }

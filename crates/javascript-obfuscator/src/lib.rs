@@ -1,9 +1,11 @@
 pub mod api;
 pub mod codegen;
 pub mod diagnostics;
+pub mod generators;
 pub mod options;
 pub mod parser;
 pub mod pipeline;
+pub mod storages;
 
 pub use api::{get_options_by_preset, obfuscate, obfuscate_multiple};
 pub use diagnostics::{ObfuscatorError, ObfuscatorResult};

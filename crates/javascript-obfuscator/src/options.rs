@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use crate::generators::IdentifierNamesGeneratorKind;
+
 pub type IdentifierNamesCache = Map<String, Value>;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -20,6 +22,12 @@ pub struct Options {
     pub source_map_mode: Option<String>,
     #[serde(default)]
     pub source_map_sources_mode: Option<String>,
+    #[serde(default)]
+    pub identifier_names_generator: Option<IdentifierNamesGeneratorKind>,
+    #[serde(default)]
+    pub identifiers_prefix: Option<String>,
+    #[serde(default)]
+    pub identifiers_dictionary: Option<Vec<String>>,
     #[serde(default)]
     pub identifier_names_cache: Option<IdentifierNamesCache>,
 }
