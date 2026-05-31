@@ -52,4 +52,16 @@ describe('Rust rewrite compatibility boundary', () => {
             assert.isNull(RustObfuscatorBridge.obfuscate('const value = 1;', {}));
         });
     });
+
+    describe('Variant #5: package facade stays on TypeScript engine for this slice', () => {
+        it('should keep TypeScript transformer behavior while Rust parser parity is incomplete', () => {
+            const result = JavaScriptObfuscator.obfuscate('const value = "hello"; console.log(value);', {
+                compact: true,
+                stringArray: false,
+                renameGlobals: false
+            });
+
+            assert.include(result.getObfuscatedCode(), 'console');
+        });
+    });
 });
