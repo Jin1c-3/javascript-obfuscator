@@ -367,4 +367,42 @@ mod tests {
 
         assert!(result.code.contains("class Foo{['property']=0x1;}"));
     }
+
+    #[test]
+    fn obfuscate_splits_string_literals_when_enabled() {
+        let result = obfuscate(
+            "const value = 'abcdef';",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                split_strings: Some(true),
+                split_strings_chunk_length: Some(3),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("const value='abc'+'def'"));
+    }
+
+    #[test]
+    fn obfuscate_keeps_string_literals_when_split_strings_disabled() {
+        let result = obfuscate(
+            "const value = 'abcdef';",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                split_strings: Some(false),
+                split_strings_chunk_length: Some(3),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("const value='abcdef'"));
+    }
 }

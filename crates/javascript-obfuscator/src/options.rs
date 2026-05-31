@@ -19,6 +19,10 @@ pub struct Options {
     #[serde(default)]
     pub reserved_names: Option<Vec<String>>,
     #[serde(default)]
+    pub split_strings: Option<bool>,
+    #[serde(default)]
+    pub split_strings_chunk_length: Option<usize>,
+    #[serde(default)]
     pub source_map: Option<bool>,
     #[serde(default)]
     pub input_file_name: Option<String>,
