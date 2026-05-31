@@ -14,6 +14,7 @@ pub mod number_to_expressions;
 pub mod object_expressions;
 pub mod object_pattern_properties;
 pub mod split_strings;
+pub mod string_array;
 pub mod template_literals;
 pub mod variable_declarations_merge;
 
@@ -71,6 +72,12 @@ pub fn apply_transforms(program: &mut Program, options: &Options) {
         options.simplify.unwrap_or(false),
     );
     eval_call_expressions::transform_eval_call_expressions(program, options);
+    string_array::transform_string_array(
+        program,
+        options.string_array.unwrap_or(false),
+        options.reserved_strings.as_deref().unwrap_or(&[]),
+        options.ignore_imports.unwrap_or(false),
+    );
     escape_sequences::transform_escape_sequences(
         program,
         options.unicode_escape_sequence.unwrap_or(false),
