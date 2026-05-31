@@ -13,6 +13,8 @@ pub struct Options {
     #[serde(default)]
     pub numbers_to_expressions: Option<bool>,
     #[serde(default)]
+    pub simplify: Option<bool>,
+    #[serde(default)]
     pub string_array: Option<bool>,
     #[serde(default)]
     pub rename_globals: Option<bool>,

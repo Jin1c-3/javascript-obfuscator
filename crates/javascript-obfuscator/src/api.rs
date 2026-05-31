@@ -624,4 +624,40 @@ mod tests {
 
         assert!(result.code.contains("const value=0xa"));
     }
+
+    #[test]
+    fn obfuscate_merges_expression_statements_when_simplify_enabled() {
+        let result = obfuscate(
+            "function foo(){bar();baz();bark();}",
+            Options {
+                compact: Some(true),
+                simplify: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("function foo(){bar(),baz(),bark();}"));
+    }
+
+    #[test]
+    fn obfuscate_keeps_expression_statements_when_simplify_disabled() {
+        let result = obfuscate(
+            "function foo(){bar();baz();}",
+            Options {
+                compact: Some(true),
+                simplify: Some(false),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("function foo(){bar();baz();}"));
+    }
 }

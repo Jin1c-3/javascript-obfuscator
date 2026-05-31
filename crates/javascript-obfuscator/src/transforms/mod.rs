@@ -3,6 +3,7 @@ pub mod class_fields;
 pub mod directive_placement;
 pub mod escape_sequences;
 pub mod export_specifiers;
+pub mod expression_statements_merge;
 pub mod labeled_statements;
 pub mod member_expressions;
 pub mod number_literals;
@@ -48,6 +49,10 @@ pub fn apply_transforms(program: &mut Program, options: &Options) {
         options.identifier_names_generator.unwrap_or_default(),
         options.identifiers_prefix.as_deref().unwrap_or(""),
         options.identifiers_dictionary.as_deref().unwrap_or(&[]),
+    );
+    expression_statements_merge::transform_expression_statements_merge(
+        program,
+        options.simplify.unwrap_or(false),
     );
     escape_sequences::transform_escape_sequences(
         program,
