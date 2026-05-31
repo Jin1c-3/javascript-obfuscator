@@ -405,4 +405,38 @@ mod tests {
 
         assert!(result.code.contains("const value='abcdef'"));
     }
+
+    #[test]
+    fn obfuscate_aliases_export_specifier_when_rename_globals_enabled() {
+        let result = obfuscate(
+            "const foo = 1; export {foo};",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(true),
+                property_bracketing: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("export{foo as foo};"));
+    }
+
+    #[test]
+    fn obfuscate_keeps_export_specifier_when_rename_globals_disabled() {
+        let result = obfuscate(
+            "const foo = 1; export {foo};",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("export{foo};"));
+    }
 }

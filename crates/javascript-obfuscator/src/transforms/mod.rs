@@ -1,5 +1,6 @@
 pub mod boolean_literals;
 pub mod class_fields;
+pub mod export_specifiers;
 pub mod member_expressions;
 pub mod number_literals;
 pub mod object_expressions;
@@ -11,6 +12,10 @@ use swc_ecma_ast::Program;
 use crate::options::Options;
 
 pub fn apply_transforms(program: &mut Program, options: &Options) {
+    export_specifiers::transform_export_specifiers(
+        program,
+        options.rename_globals.unwrap_or(false),
+    );
     template_literals::transform_template_literals(program);
     boolean_literals::transform_boolean_literals(program);
     number_literals::transform_number_literals(program);
