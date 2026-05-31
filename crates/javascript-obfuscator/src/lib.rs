@@ -6,6 +6,7 @@ pub mod options;
 pub mod parser;
 pub mod pipeline;
 pub mod storages;
+pub mod transforms;
 
 pub use api::{get_options_by_preset, obfuscate, obfuscate_multiple};
 pub use diagnostics::{ObfuscatorError, ObfuscatorResult};

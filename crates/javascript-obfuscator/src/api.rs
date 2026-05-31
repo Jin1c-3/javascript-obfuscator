@@ -163,4 +163,38 @@ mod tests {
             assert_eq!(cache.get("propertyIdentifiers"), Some(&json!({})));
         }
     }
+
+    #[test]
+    fn obfuscate_transforms_true_boolean_literals() {
+        let result = obfuscate(
+            "const value = true;",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("const value=!![]"));
+        assert!(!result.code.contains("true"));
+    }
+
+    #[test]
+    fn obfuscate_transforms_false_boolean_literals() {
+        let result = obfuscate(
+            "const value = false;",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("const value=![]"));
+        assert!(!result.code.contains("false"));
+    }
 }
