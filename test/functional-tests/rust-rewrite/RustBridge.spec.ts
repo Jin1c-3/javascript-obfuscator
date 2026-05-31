@@ -1,0 +1,44 @@
+import { assert } from 'chai';
+
+import { JavaScriptObfuscator } from '../../../src/JavaScriptObfuscatorFacade';
+
+describe('Rust rewrite compatibility boundary', () => {
+    describe('Variant #1: public facade remains available', () => {
+        it('should obfuscate code through the existing facade', () => {
+            const result = JavaScriptObfuscator.obfuscate('const value = 1; console.log(value);', {
+                compact: true,
+                stringArray: false,
+                renameGlobals: false
+            });
+
+            assert.isString(result.getObfuscatedCode());
+            assert.include(result.getObfuscatedCode(), 'console');
+        });
+    });
+
+    describe('Variant #2: multiple source facade remains available', () => {
+        it('should obfuscate multiple source files', () => {
+            const results = JavaScriptObfuscator.obfuscateMultiple(
+                {
+                    'first.js': 'const first = 1;',
+                    'second.js': 'const second = 2;'
+                },
+                {
+                    compact: true,
+                    stringArray: false,
+                    renameGlobals: false
+                }
+            );
+
+            assert.hasAllKeys(results, ['first.js', 'second.js']);
+            assert.isString(results['first.js'].getObfuscatedCode());
+            assert.isString(results['second.js'].getObfuscatedCode());
+        });
+    });
+
+    describe('Variant #3: Pro API is not exposed', () => {
+        it('should not expose obfuscatePro on the public facade', () => {
+            assert.isUndefined((JavaScriptObfuscator as unknown as { obfuscatePro?: unknown }).obfuscatePro);
+        });
+    });
+});
