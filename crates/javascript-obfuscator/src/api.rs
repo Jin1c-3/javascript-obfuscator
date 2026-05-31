@@ -696,4 +696,44 @@ mod tests {
 
         assert!(result.code.contains("var foo=0x1;var bar=0x2;"));
     }
+
+    #[test]
+    fn obfuscate_simplifies_trailing_return_block_when_simplify_enabled() {
+        let result = obfuscate(
+            "function foo(){bar();baz();return bark();}",
+            Options {
+                compact: Some(true),
+                simplify: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result
+            .code
+            .contains("function foo(){return bar(),baz(),bark();}"));
+    }
+
+    #[test]
+    fn obfuscate_keeps_trailing_return_block_when_simplify_disabled() {
+        let result = obfuscate(
+            "function foo(){bar();baz();return bark();}",
+            Options {
+                compact: Some(true),
+                simplify: Some(false),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result
+            .code
+            .contains("function foo(){bar();baz();return bark();}"));
+    }
 }

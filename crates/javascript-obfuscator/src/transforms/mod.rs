@@ -1,3 +1,4 @@
+pub mod block_statement_simplify;
 pub mod boolean_literals;
 pub mod class_fields;
 pub mod directive_placement;
@@ -56,6 +57,10 @@ pub fn apply_transforms(program: &mut Program, options: &Options) {
         options.simplify.unwrap_or(false),
     );
     variable_declarations_merge::transform_variable_declarations_merge(
+        program,
+        options.simplify.unwrap_or(false),
+    );
+    block_statement_simplify::transform_block_statement_simplify(
         program,
         options.simplify.unwrap_or(false),
     );
