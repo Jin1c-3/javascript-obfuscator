@@ -3,6 +3,7 @@ pub mod boolean_literals;
 pub mod class_fields;
 pub mod directive_placement;
 pub mod escape_sequences;
+pub mod eval_call_expressions;
 pub mod export_specifiers;
 pub mod expression_statements_merge;
 pub mod if_statement_simplify;
@@ -69,6 +70,7 @@ pub fn apply_transforms(program: &mut Program, options: &Options) {
         program,
         options.simplify.unwrap_or(false),
     );
+    eval_call_expressions::transform_eval_call_expressions(program, options);
     escape_sequences::transform_escape_sequences(
         program,
         options.unicode_escape_sequence.unwrap_or(false),

@@ -772,4 +772,69 @@ mod tests {
 
         assert!(result.code.contains("if(!![]){bar();}"));
     }
+
+    #[test]
+    fn obfuscate_transforms_literal_eval_string_contents() {
+        let result = obfuscate(
+            "eval('console.log(true);');",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(true),
+                unicode_escape_sequence: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(
+            result
+                .code
+                .contains("eval('console[\\x27log\\x27](!![]);');"),
+            "{}",
+            result.code
+        );
+        assert!(
+            !result.code.contains("console.log(true)"),
+            "{}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn obfuscate_transforms_template_eval_string_contents() {
+        let result = obfuscate(
+            "eval(`true;`);",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                unicode_escape_sequence: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("eval('!![];');"), "{}", result.code);
+    }
+
+    #[test]
+    fn obfuscate_keeps_unparseable_eval_string() {
+        let result = obfuscate(
+            "eval('~');",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                unicode_escape_sequence: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("eval('~');"), "{}", result.code);
+    }
 }
