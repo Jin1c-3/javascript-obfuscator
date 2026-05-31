@@ -5,6 +5,7 @@ pub mod directive_placement;
 pub mod escape_sequences;
 pub mod export_specifiers;
 pub mod expression_statements_merge;
+pub mod if_statement_simplify;
 pub mod labeled_statements;
 pub mod member_expressions;
 pub mod number_literals;
@@ -61,6 +62,10 @@ pub fn apply_transforms(program: &mut Program, options: &Options) {
         options.simplify.unwrap_or(false),
     );
     block_statement_simplify::transform_block_statement_simplify(
+        program,
+        options.simplify.unwrap_or(false),
+    );
+    if_statement_simplify::transform_if_statement_simplify(
         program,
         options.simplify.unwrap_or(false),
     );

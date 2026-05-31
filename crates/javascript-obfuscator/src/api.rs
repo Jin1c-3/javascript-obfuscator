@@ -736,4 +736,40 @@ mod tests {
             .code
             .contains("function foo(){bar();baz();return bark();}"));
     }
+
+    #[test]
+    fn obfuscate_simplifies_if_expression_branch_when_simplify_enabled() {
+        let result = obfuscate(
+            "if(true){bar();baz();}",
+            Options {
+                compact: Some(true),
+                simplify: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("!![]&&(bar(),baz());"));
+    }
+
+    #[test]
+    fn obfuscate_keeps_if_expression_branch_when_simplify_disabled() {
+        let result = obfuscate(
+            "if(true){bar();}",
+            Options {
+                compact: Some(true),
+                simplify: Some(false),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("if(!![]){bar();}"));
+    }
 }
