@@ -1,5 +1,6 @@
 pub mod boolean_literals;
 pub mod class_fields;
+pub mod directive_placement;
 pub mod escape_sequences;
 pub mod export_specifiers;
 pub mod member_expressions;
@@ -40,4 +41,5 @@ pub fn apply_transforms(program: &mut Program, options: &Options) {
         program,
         options.unicode_escape_sequence.unwrap_or(false),
     );
+    directive_placement::transform_directive_placement(program);
 }

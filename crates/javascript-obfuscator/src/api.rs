@@ -509,4 +509,44 @@ mod tests {
 
         assert!(result.code.contains("const value='hello\\x20world'"));
     }
+
+    #[test]
+    fn obfuscate_preserves_program_directive_after_escape_sequences() {
+        let result = obfuscate(
+            "'use strict'; const value = 'hello world';",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                unicode_escape_sequence: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result
+            .code
+            .contains("'use strict';const value='hello\\x20world';"));
+    }
+
+    #[test]
+    fn obfuscate_preserves_function_directive_after_escape_sequences() {
+        let result = obfuscate(
+            "function run(){'use strict'; const value = 'hello world';}",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                unicode_escape_sequence: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result
+            .code
+            .contains("function run(){'use strict';const value='hello\\x20world';}"));
+    }
 }
