@@ -10,8 +10,8 @@ pub fn obfuscate(source_code: String, options: Option<Value>) -> Result<Value> {
         .map_err(|error| Error::from_reason(error.to_string()))?
         .unwrap_or_default();
 
-    let result =
-        javascript_obfuscator::obfuscate(&source_code, options).map_err(Error::from_reason)?;
+    let result = javascript_obfuscator::obfuscate(&source_code, options)
+        .map_err(|error| Error::from_reason(error.to_string()))?;
 
     serde_json::to_value(result).map_err(|error| Error::from_reason(error.to_string()))
 }

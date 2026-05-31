@@ -15,6 +15,12 @@ pub struct Options {
     #[serde(default)]
     pub source_map: Option<bool>,
     #[serde(default)]
+    pub input_file_name: Option<String>,
+    #[serde(default)]
+    pub source_map_mode: Option<String>,
+    #[serde(default)]
+    pub source_map_sources_mode: Option<String>,
+    #[serde(default)]
     pub identifier_names_cache: Option<IdentifierNamesCache>,
 }
 

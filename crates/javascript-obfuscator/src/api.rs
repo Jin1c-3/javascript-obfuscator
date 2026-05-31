@@ -2,26 +2,18 @@ use std::collections::BTreeMap;
 
 use serde_json::{json, Value};
 
+use crate::diagnostics::{ObfuscatorError, ObfuscatorResult};
 use crate::options::{ObfuscationResult, Options, Preset};
+use crate::pipeline::run_pipeline;
 
-pub fn obfuscate(source_code: &str, options: Options) -> Result<ObfuscationResult, String> {
-    let source_map = if options.source_map.unwrap_or(false) {
-        "{}".to_string()
-    } else {
-        String::new()
-    };
-
-    Ok(ObfuscationResult::new(
-        source_code.to_string(),
-        source_map,
-        options.identifier_names_cache,
-    ))
+pub fn obfuscate(source_code: &str, options: Options) -> ObfuscatorResult<ObfuscationResult> {
+    run_pipeline(source_code, options)
 }
 
 pub fn obfuscate_multiple(
     source_codes: BTreeMap<String, String>,
     options: Options,
-) -> Result<BTreeMap<String, ObfuscationResult>, String> {
+) -> ObfuscatorResult<BTreeMap<String, ObfuscationResult>> {
     source_codes
         .into_iter()
         .map(|(file_name, source_code)| {
@@ -29,7 +21,7 @@ pub fn obfuscate_multiple(
 
             Ok((file_name, result))
         })
-        .collect()
+        .collect::<Result<_, ObfuscatorError>>()
 }
 
 pub fn get_options_by_preset(preset: Preset) -> Value {
@@ -65,12 +57,45 @@ mod tests {
     use super::*;
 
     #[test]
-    fn obfuscate_returns_source_code_for_scaffold() {
-        let result =
-            obfuscate("const value = 1;", Options::default()).expect("obfuscation should succeed");
+    fn obfuscate_generates_code_from_parsed_ast() {
+        let result = obfuscate(
+            "const value = 1; console.log(value);",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
 
-        assert_eq!(result.code, "const value = 1;");
+        assert!(result.code.contains("const value=1"));
+        assert!(result.code.contains("console.log(value)"));
         assert_eq!(result.source_map, "");
+    }
+
+    #[test]
+    fn obfuscate_preserves_hashbang() {
+        let result = obfuscate(
+            "#!/usr/bin/env node\nconst value = 1;",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.starts_with("#!/usr/bin/env node\n"));
+        assert!(result.code.contains("const value=1"));
+    }
+
+    #[test]
+    fn obfuscate_reports_parse_errors() {
+        let error = obfuscate("const =", Options::default()).expect_err("parse should fail");
+
+        assert!(error.to_string().contains("JavaScript parse error"));
     }
 
     #[test]
@@ -84,5 +109,7 @@ mod tests {
 
         assert!(result.contains_key("first.js"));
         assert!(result.contains_key("second.js"));
+        assert!(result["first.js"].code.contains("first"));
+        assert!(result["second.js"].code.contains("second"));
     }
 }
