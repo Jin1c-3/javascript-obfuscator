@@ -20,8 +20,13 @@ This slice ports only raw literal formatting:
 
 It does not port `numbersToExpressions`, numeric expression analysis, object key transforms, string splitting, or source map mapping parity. The TypeScript package facade remains on the existing TypeScript engine.
 
+## Execution Adjustment
+
+SWC codegen with `Config::minify = true` ignores `raw` for finite numeric literals and small bigint literals. To preserve the obfuscator contract, this slice updates the Rust codegen adapter to emit with SWC minify disabled and then run a small string-aware compaction pass when `compact` is true. The compaction pass removes whitespace outside string/template literals while preserving needed identifier separation.
+
 ## File Structure
 
+- Modify `crates/javascript-obfuscator/src/codegen.rs`: preserve raw numeric literals while still returning compact output.
 - Modify `crates/javascript-obfuscator/src/transforms/mod.rs`: add and run the number literal transform.
 - Create `crates/javascript-obfuscator/src/transforms/number_literals.rs`: SWC visitor that sets number and bigint raw literals.
 - Modify `crates/javascript-obfuscator/src/api.rs`: add public Rust API tests for number and bigint literal output.

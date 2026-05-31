@@ -75,7 +75,7 @@ mod tests {
         )
         .expect("obfuscation should succeed");
 
-        assert!(result.code.contains("const value=1"));
+        assert!(result.code.contains("const value=0x1"));
         assert!(result.code.contains("console.log(value)"));
         assert_eq!(result.source_map, "");
     }
@@ -94,7 +94,7 @@ mod tests {
         .expect("obfuscation should succeed");
 
         assert!(result.code.starts_with("#!/usr/bin/env node\n"));
-        assert!(result.code.contains("const value=1"));
+        assert!(result.code.contains("const value=0x1"));
     }
 
     #[test]
@@ -196,5 +196,37 @@ mod tests {
 
         assert!(result.code.contains("const value=![]"));
         assert!(!result.code.contains("false"));
+    }
+
+    #[test]
+    fn obfuscate_transforms_integer_number_literal_raw_value() {
+        let result = obfuscate(
+            "const value = 10;",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("const value=0xa"));
+    }
+
+    #[test]
+    fn obfuscate_transforms_bigint_literal_raw_value() {
+        let result = obfuscate(
+            "const value = 10n;",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("const value=0xan"));
     }
 }
