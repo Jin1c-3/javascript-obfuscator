@@ -18,19 +18,14 @@ pub struct Options {
     pub identifier_names_cache: Option<IdentifierNamesCache>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Preset {
+    #[default]
     Default,
     LowObfuscation,
     MediumObfuscation,
     HighObfuscation,
-}
-
-impl Default for Preset {
-    fn default() -> Self {
-        Self::Default
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
