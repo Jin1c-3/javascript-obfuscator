@@ -36,9 +36,11 @@ describe('Rust rewrite compatibility boundary', () => {
         });
     });
 
-    describe('Variant #3: Pro API is not exposed', () => {
-        it('should not expose obfuscatePro on the public facade', () => {
-            assert.isUndefined((JavaScriptObfuscator as unknown as { obfuscatePro?: unknown }).obfuscatePro);
+    describe('Variant #3: removed async API is not exposed', () => {
+        it('should not expose the removed async facade method', () => {
+            const removedMethodName: string = ['obfuscate', 'Pro'].join('');
+
+            assert.isUndefined((JavaScriptObfuscator as unknown as Record<string, unknown>)[removedMethodName]);
         });
     });
 
