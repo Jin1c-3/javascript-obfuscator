@@ -1,0 +1,16 @@
+[package]
+name = "javascript-obfuscator-node"
+version = "5.4.3"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+javascript-obfuscator = { path = "../javascript-obfuscator" }
+napi = { version = "2", default-features = false, features = ["napi4", "serde-json"] }
+napi-derive = "2"
+serde_json.workspace = true

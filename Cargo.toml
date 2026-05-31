@@ -1,7 +1,8 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/javascript-obfuscator"
+    "crates/javascript-obfuscator",
+    "crates/javascript-obfuscator-node"
 ]
 
 [workspace.package]
