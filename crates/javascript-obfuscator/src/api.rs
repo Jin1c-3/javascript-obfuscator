@@ -439,4 +439,38 @@ mod tests {
 
         assert!(result.code.contains("export{foo};"));
     }
+
+    #[test]
+    fn obfuscate_transforms_object_pattern_when_rename_globals_enabled() {
+        let result = obfuscate(
+            "const {foo} = source;",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(true),
+                property_bracketing: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("const{foo:foo}=source"));
+    }
+
+    #[test]
+    fn obfuscate_keeps_top_level_object_pattern_when_rename_globals_disabled() {
+        let result = obfuscate(
+            "const {foo} = source;",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("const{foo}=source"));
+    }
 }
