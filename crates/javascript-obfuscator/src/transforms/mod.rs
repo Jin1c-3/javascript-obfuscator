@@ -75,6 +75,7 @@ pub fn apply_transforms(program: &mut Program, options: &Options) {
         program,
         options.unicode_escape_sequence.unwrap_or(false),
         options.reserved_strings.as_deref().unwrap_or(&[]),
+        options.ignore_imports.unwrap_or(false),
     );
     directive_placement::transform_directive_placement(program);
 }

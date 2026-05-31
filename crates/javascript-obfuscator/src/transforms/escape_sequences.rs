@@ -1,23 +1,40 @@
-use swc_ecma_ast::{Program, Str};
+use swc_ecma_ast::{CallExpr, Callee, ExportAll, Expr, ImportDecl, NamedExport, Program, Str};
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 pub fn transform_escape_sequences(
     program: &mut Program,
     unicode_escape_sequence: bool,
     reserved_strings: &[String],
+    ignore_imports: bool,
 ) {
     program.visit_mut_with(&mut EscapeSequenceTransform {
         unicode_escape_sequence,
         reserved_strings,
+        ignore_imports,
     });
 }
 
 struct EscapeSequenceTransform<'a> {
     unicode_escape_sequence: bool,
     reserved_strings: &'a [String],
+    ignore_imports: bool,
 }
 
 impl VisitMut for EscapeSequenceTransform<'_> {
+    fn visit_mut_import_decl(&mut self, _import_declaration: &mut ImportDecl) {}
+
+    fn visit_mut_named_export(&mut self, _named_export: &mut NamedExport) {}
+
+    fn visit_mut_export_all(&mut self, _export_all: &mut ExportAll) {}
+
+    fn visit_mut_call_expr(&mut self, call_expression: &mut CallExpr) {
+        if self.ignore_imports && is_ignored_import_call(call_expression) {
+            return;
+        }
+
+        call_expression.visit_mut_children_with(self);
+    }
+
     fn visit_mut_str(&mut self, string_literal: &mut Str) {
         string_literal.visit_mut_children_with(self);
 
@@ -29,6 +46,25 @@ impl VisitMut for EscapeSequenceTransform<'_> {
         let escaped_value = encode_escape_sequence(&value, self.unicode_escape_sequence);
         string_literal.raw = Some(format!("'{escaped_value}'").into());
     }
+}
+
+fn is_ignored_import_call(call_expression: &CallExpr) -> bool {
+    is_dynamic_import_call(call_expression) || is_require_call(call_expression)
+}
+
+fn is_dynamic_import_call(call_expression: &CallExpr) -> bool {
+    matches!(call_expression.callee, Callee::Import(_))
+}
+
+fn is_require_call(call_expression: &CallExpr) -> bool {
+    let Callee::Expr(callee_expression) = &call_expression.callee else {
+        return false;
+    };
+    let Expr::Ident(identifier) = callee_expression.as_ref() else {
+        return false;
+    };
+
+    identifier.sym.as_ref() == "require"
 }
 
 fn is_reserved_string(value: &str, reserved_strings: &[String]) -> bool {
@@ -89,6 +125,7 @@ mod tests {
             &mut parsed_program.program,
             unicode_escape_sequence,
             reserved_strings,
+            false,
         );
         generate_code(&parsed_program.program, parsed_program.source_map, true)
             .expect("code should generate")

@@ -886,4 +886,79 @@ mod tests {
             result.code
         );
     }
+
+    #[test]
+    fn obfuscate_keeps_static_import_string_unescaped() {
+        let result = obfuscate(
+            "import foo from './foo'; const bar = './bar';",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                unicode_escape_sequence: Some(true),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("from'./foo';"), "{}", result.code);
+        assert!(
+            result
+                .code
+                .contains("const bar='\\x2e\\x2f\\x62\\x61\\x72';"),
+            "{}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn obfuscate_keeps_import_call_strings_when_ignore_imports_enabled() {
+        let result = obfuscate(
+            "const foo = require('./foo'); const bar = './bar'; const baz = import('./baz');",
+            Options {
+                compact: Some(true),
+                ignore_imports: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                unicode_escape_sequence: Some(true),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("require('./foo')"), "{}", result.code);
+        assert!(result.code.contains("import('./baz')"), "{}", result.code);
+        assert!(
+            result
+                .code
+                .contains("const bar='\\x2e\\x2f\\x62\\x61\\x72';"),
+            "{}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn obfuscate_encodes_require_string_when_ignore_imports_disabled() {
+        let result = obfuscate(
+            "const foo = require('./foo');",
+            Options {
+                compact: Some(true),
+                ignore_imports: Some(false),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                unicode_escape_sequence: Some(true),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(
+            result.code.contains("require('\\x2e\\x2f\\x66\\x6f\\x6f')"),
+            "{}",
+            result.code
+        );
+    }
 }
