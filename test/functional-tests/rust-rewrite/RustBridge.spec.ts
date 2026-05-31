@@ -41,4 +41,13 @@ describe('Rust rewrite compatibility boundary', () => {
             assert.isUndefined((JavaScriptObfuscator as unknown as { obfuscatePro?: unknown }).obfuscatePro);
         });
     });
+
+    describe('Variant #4: Rust bridge scaffold', () => {
+        it('should expose a disabled bridge until Rust parity is ready', () => {
+            const { RustObfuscatorBridge } = require('../../../src/rust/RustObfuscatorBridge');
+
+            assert.isFalse(RustObfuscatorBridge.isAvailable());
+            assert.isNull(RustObfuscatorBridge.obfuscate('const value = 1;', {}));
+        });
+    });
 });
