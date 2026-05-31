@@ -33,8 +33,6 @@ import './unit-tests/node/node-utils/NodeUtils.spec';
 import './unit-tests/node/numerical-expression-data-to-node-converter/NumericalExpressionDataToNodeConverter.spec';
 import './unit-tests/options/Options.spec';
 import './unit-tests/options/ValidationErrorsFormatter.spec';
-import './unit-tests/pro-api/ProApiClient.spec';
-import './functional-tests/pro-api/ProApiClient.spec';
 import './functional-tests/rust-rewrite/RustBridge.spec';
 import './unit-tests/source-code/ObfuscationResult.spec';
 import './unit-tests/source-code/SourceCode.spec';
