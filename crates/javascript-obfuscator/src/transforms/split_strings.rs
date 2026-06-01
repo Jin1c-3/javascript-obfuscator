@@ -1,3 +1,4 @@
+use regex::Regex;
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::{BinExpr, BinaryOp, Expr, ExprStmt, Lit, Program, Str};
 use swc_ecma_visit::{VisitMut, VisitMutWith};
@@ -14,16 +15,16 @@ pub fn transform_split_strings(
 
     program.visit_mut_with(&mut SplitStringTransform {
         chunk_length,
-        reserved_strings,
+        reserved_string_patterns: compile_patterns(reserved_strings),
     });
 }
 
-struct SplitStringTransform<'a> {
+struct SplitStringTransform {
     chunk_length: usize,
-    reserved_strings: &'a [String],
+    reserved_string_patterns: Vec<Regex>,
 }
 
-impl VisitMut for SplitStringTransform<'_> {
+impl VisitMut for SplitStringTransform {
     fn visit_mut_expr_stmt(&mut self, expression_statement: &mut ExprStmt) {
         if matches!(expression_statement.expr.as_ref(), Expr::Lit(Lit::Str(_))) {
             return;
@@ -41,7 +42,7 @@ impl VisitMut for SplitStringTransform<'_> {
 
         if is_reserved_string(
             &string_literal.value.to_string_lossy(),
-            self.reserved_strings,
+            &self.reserved_string_patterns,
         ) {
             return;
         }
@@ -54,10 +55,17 @@ impl VisitMut for SplitStringTransform<'_> {
     }
 }
 
-fn is_reserved_string(value: &str, reserved_strings: &[String]) -> bool {
-    reserved_strings
+fn is_reserved_string(value: &str, reserved_string_patterns: &[Regex]) -> bool {
+    reserved_string_patterns
         .iter()
-        .any(|reserved_string| value.contains(reserved_string))
+        .any(|reserved_string_pattern| reserved_string_pattern.is_match(value))
+}
+
+fn compile_patterns(patterns: &[String]) -> Vec<Regex> {
+    patterns
+        .iter()
+        .filter_map(|pattern| Regex::new(pattern).ok())
+        .collect()
 }
 
 fn transform_string_literal(string_literal: &Str, chunk_length: usize) -> Option<Expr> {
@@ -183,5 +191,19 @@ mod tests {
 
         assert!(code.contains("const keep='please-keep-me';"), "{code}");
         assert!(code.contains("const split='abc'+'def';"), "{code}");
+    }
+
+    #[test]
+    fn keeps_regex_reserved_split_string_literals_inline() {
+        let reserved_strings = vec!["ar$".to_string()];
+        let code = transform(
+            "const foo = 'foofoo'; const bar = 'barbar';",
+            true,
+            3,
+            &reserved_strings,
+        );
+
+        assert!(code.contains("const foo='foo'+'foo';"), "{code}");
+        assert!(code.contains("const bar='barbar';"), "{code}");
     }
 }

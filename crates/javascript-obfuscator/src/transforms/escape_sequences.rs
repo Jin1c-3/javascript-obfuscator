@@ -1,3 +1,4 @@
+use regex::Regex;
 use swc_ecma_ast::{CallExpr, Callee, ExportAll, Expr, ImportDecl, NamedExport, Program, Str};
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
@@ -9,18 +10,18 @@ pub fn transform_escape_sequences(
 ) {
     program.visit_mut_with(&mut EscapeSequenceTransform {
         unicode_escape_sequence,
-        reserved_strings,
+        reserved_string_patterns: compile_patterns(reserved_strings),
         ignore_imports,
     });
 }
 
-struct EscapeSequenceTransform<'a> {
+struct EscapeSequenceTransform {
     unicode_escape_sequence: bool,
-    reserved_strings: &'a [String],
+    reserved_string_patterns: Vec<Regex>,
     ignore_imports: bool,
 }
 
-impl VisitMut for EscapeSequenceTransform<'_> {
+impl VisitMut for EscapeSequenceTransform {
     fn visit_mut_import_decl(&mut self, _import_declaration: &mut ImportDecl) {}
 
     fn visit_mut_named_export(&mut self, _named_export: &mut NamedExport) {}
@@ -39,7 +40,7 @@ impl VisitMut for EscapeSequenceTransform<'_> {
         string_literal.visit_mut_children_with(self);
 
         let value = string_literal.value.to_string_lossy();
-        if is_reserved_string(&value, self.reserved_strings) {
+        if is_reserved_string(&value, &self.reserved_string_patterns) {
             return;
         }
 
@@ -67,10 +68,17 @@ fn is_require_call(call_expression: &CallExpr) -> bool {
     identifier.sym.as_ref() == "require"
 }
 
-fn is_reserved_string(value: &str, reserved_strings: &[String]) -> bool {
-    reserved_strings
+fn is_reserved_string(value: &str, reserved_string_patterns: &[Regex]) -> bool {
+    reserved_string_patterns
         .iter()
-        .any(|reserved_string| value.contains(reserved_string))
+        .any(|reserved_string_pattern| reserved_string_pattern.is_match(value))
+}
+
+fn compile_patterns(patterns: &[String]) -> Vec<Regex> {
+    patterns
+        .iter()
+        .filter_map(|pattern| Regex::new(pattern).ok())
+        .collect()
 }
 
 fn encode_escape_sequence(value: &str, encode_all_symbols: bool) -> String {
@@ -179,5 +187,17 @@ mod tests {
 
         assert!(code.contains("const foo='foo';"), "{code}");
         assert!(code.contains("const bar='\\x62\\x61\\x72';"), "{code}");
+    }
+
+    #[test]
+    fn keeps_regex_reserved_string_when_unicode_escape_sequence_is_enabled() {
+        let code = transform(
+            "const foo = 'foo'; const bar = 'bar';",
+            true,
+            &["ar$".to_string()],
+        );
+
+        assert!(code.contains("const foo='\\x66\\x6f\\x6f';"), "{code}");
+        assert!(code.contains("const bar='bar';"), "{code}");
     }
 }

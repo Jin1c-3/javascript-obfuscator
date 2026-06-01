@@ -48,7 +48,7 @@ pub fn transform_string_array(program: &mut Program, options: StringArrayTransfo
         index_type: first_index_type(options.indexes_type),
         encoding: options.encoding,
         index_shift_enabled: options.index_shift,
-        reserved_strings: options.reserved_strings,
+        reserved_string_patterns: compile_patterns(options.reserved_strings),
         force_transform_patterns,
         ignore_imports: options.ignore_imports,
     };
@@ -98,7 +98,7 @@ struct StringArrayValue {
     decode_key: Option<&'static str>,
 }
 
-struct StringArrayTransform<'a> {
+struct StringArrayTransform {
     storage_name: &'static str,
     indexes_by_value: BTreeMap<String, usize>,
     values: Vec<StringArrayValue>,
@@ -106,12 +106,12 @@ struct StringArrayTransform<'a> {
     index_type: StringArrayIndexesType,
     encoding: StringArrayEncoding,
     index_shift_enabled: bool,
-    reserved_strings: &'a [String],
+    reserved_string_patterns: Vec<Regex>,
     force_transform_patterns: Vec<Regex>,
     ignore_imports: bool,
 }
 
-impl VisitMut for StringArrayTransform<'_> {
+impl VisitMut for StringArrayTransform {
     fn visit_mut_expr_stmt(&mut self, expression_statement: &mut swc_ecma_ast::ExprStmt) {
         if matches!(expression_statement.expr.as_ref(), Expr::Lit(Lit::Str(_))) {
             return;
@@ -144,7 +144,7 @@ impl VisitMut for StringArrayTransform<'_> {
                 return;
             }
 
-            if is_reserved_string(&value, self.reserved_strings) {
+            if is_matching_pattern(&value, &self.reserved_string_patterns) {
                 return;
             }
         }
@@ -161,7 +161,7 @@ impl VisitMut for StringArrayTransform<'_> {
     }
 }
 
-impl StringArrayTransform<'_> {
+impl StringArrayTransform {
     fn get_or_insert_value(&mut self, value: String) -> (usize, Option<&'static str>) {
         if let Some(index) = self.indexes_by_value.get(&value) {
             return (*index, self.values[*index].decode_key);
@@ -824,23 +824,23 @@ fn is_require_call(call_expression: &CallExpr) -> bool {
     identifier.sym.as_ref() == "require"
 }
 
-fn is_reserved_string(value: &str, reserved_strings: &[String]) -> bool {
-    reserved_strings
-        .iter()
-        .any(|reserved_string| value.contains(reserved_string))
-}
-
 fn compile_force_transform_patterns(force_transform_strings: &[String]) -> Vec<Regex> {
-    force_transform_strings
-        .iter()
-        .filter_map(|force_transform_string| Regex::new(force_transform_string).ok())
-        .collect()
+    compile_patterns(force_transform_strings)
 }
 
 fn is_force_transform_string(value: &str, force_transform_patterns: &[Regex]) -> bool {
-    force_transform_patterns
+    is_matching_pattern(value, force_transform_patterns)
+}
+
+fn compile_patterns(patterns: &[String]) -> Vec<Regex> {
+    patterns
         .iter()
-        .any(|force_transform_pattern| force_transform_pattern.is_match(value))
+        .filter_map(|pattern| Regex::new(pattern).ok())
+        .collect()
+}
+
+fn is_matching_pattern(value: &str, patterns: &[Regex]) -> bool {
+    patterns.iter().any(|pattern| pattern.is_match(value))
 }
 
 #[cfg(test)]
@@ -924,6 +924,20 @@ mod tests {
         assert!(code.contains("const _0x0=['take'];"), "{code}");
         assert!(code.contains("const keep='keep';"), "{code}");
         assert!(code.contains("const take=_0x1(0x0);"), "{code}");
+    }
+
+    #[test]
+    fn keeps_regex_reserved_string_literals_inline() {
+        let code = transform(
+            "const foo = 'foo'; const bar = 'bar';",
+            true,
+            &["ar$".to_string()],
+            false,
+        );
+
+        assert!(code.contains("const _0x0=['foo'];"), "{code}");
+        assert!(code.contains("const foo=_0x1(0x0);"), "{code}");
+        assert!(code.contains("const bar='bar';"), "{code}");
     }
 
     #[test]
