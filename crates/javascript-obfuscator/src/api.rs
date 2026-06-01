@@ -596,6 +596,89 @@ mod tests {
     }
 
     #[test]
+    fn obfuscate_self_defending_inserts_helper_and_preserves_runtime() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "selfDefending": true,
+            "stringArray": false,
+            "unicodeEscapeSequence": false
+        }))
+        .expect("self defending options should deserialize");
+        let result =
+            obfuscate("globalThis.result = 'ran';", options).expect("obfuscation should succeed");
+
+        assert!(result.code.contains("_0xselfDefending"), "{}", result.code);
+        assert!(result.code.contains("(((.+)+)+)+$"), "{}", result.code);
+        assert!(
+            result
+                .code
+                .find("_0xselfDefending")
+                .expect("self defending helper should be present")
+                < result
+                    .code
+                    .find("globalThis.result")
+                    .expect("user code should be present"),
+            "{}",
+            result.code
+        );
+
+        let output = run_node_source(&format!(
+            "const vm=require('node:vm');const sandbox={{result:null}};vm.runInNewContext({},sandbox);console.log(sandbox.result);",
+            serde_json::to_string(&result.code).expect("generated code should serialize")
+        ));
+
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "ran\n");
+        assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    }
+
+    #[test]
+    fn obfuscate_self_defending_false_does_not_insert_helper() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "selfDefending": false,
+            "stringArray": false,
+            "unicodeEscapeSequence": false
+        }))
+        .expect("self defending options should deserialize");
+        let result =
+            obfuscate("globalThis.result = 'ran';", options).expect("obfuscation should succeed");
+
+        assert!(!result.code.contains("_0xselfDefending"), "{}", result.code);
+        assert!(!result.code.contains("(((.+)+)+)+$"), "{}", result.code);
+    }
+
+    #[test]
+    fn obfuscate_self_defending_forces_compact_output() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": false,
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "selfDefending": true,
+            "stringArray": false,
+            "unicodeEscapeSequence": false
+        }))
+        .expect("self defending options should deserialize");
+        let result = obfuscate("'use strict'; globalThis.result = 'ran';", options)
+            .expect("obfuscation should succeed");
+
+        assert!(result.code.starts_with("'use strict';"), "{}", result.code);
+        assert!(
+            !result.code.contains('\n'),
+            "selfDefending should force compact output: {}",
+            result.code
+        );
+    }
+
+    #[test]
     fn obfuscate_dead_code_injection_adds_unreachable_block_and_preserves_runtime() {
         let options: Options = serde_json::from_value(json!({
             "compact": true,

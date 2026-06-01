@@ -21,11 +21,8 @@ pub fn run_pipeline(source_code: &str, options: Options) -> ObfuscatorResult<Obf
         &options,
         identifier_names_cache_storage.as_mut(),
     );
-    let mut code = generate_code(
-        &parsed_program.program,
-        parsed_program.source_map,
-        options.compact.unwrap_or(true),
-    )?;
+    let compact = options.compact.unwrap_or(true) || options.self_defending.unwrap_or(false);
+    let mut code = generate_code(&parsed_program.program, parsed_program.source_map, compact)?;
 
     if let Some(hashbang) = hashbang {
         code = format!("{hashbang}{code}");

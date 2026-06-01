@@ -20,6 +20,7 @@ pub mod object_expression_keys;
 pub mod object_expressions;
 pub mod object_pattern_properties;
 pub mod rename_properties;
+pub mod self_defending;
 pub mod split_strings;
 pub mod string_array;
 pub mod template_literals;
@@ -44,6 +45,7 @@ pub fn apply_transforms(
         options.debug_protection.unwrap_or(false),
         options.debug_protection_interval.unwrap_or(0),
     );
+    self_defending::transform_self_defending(program, options.self_defending.unwrap_or(false));
     domain_lock::transform_domain_lock(
         program,
         options.domain_lock.as_deref().unwrap_or(&[]),

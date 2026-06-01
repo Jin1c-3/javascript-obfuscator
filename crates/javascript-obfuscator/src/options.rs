@@ -77,6 +77,8 @@ pub struct Options {
     #[serde(default, deserialize_with = "deserialize_optional_usize_floor")]
     pub debug_protection_interval: Option<usize>,
     #[serde(default)]
+    pub self_defending: Option<bool>,
+    #[serde(default)]
     pub disable_console_output: Option<bool>,
     #[serde(default)]
     pub domain_lock: Option<Vec<String>>,
@@ -389,5 +391,17 @@ mod tests {
             serialized_options["controlFlowFlatteningThreshold"],
             json!(0.75)
         );
+    }
+
+    #[test]
+    fn deserializes_self_defending_option_for_option_compatibility() {
+        let options: Options = serde_json::from_value(json!({
+            "selfDefending": true
+        }))
+        .expect("self defending option should deserialize");
+        let serialized_options = serde_json::to_value(&options).expect("options should serialize");
+
+        assert_eq!(options.self_defending, Some(true));
+        assert_eq!(serialized_options["selfDefending"], json!(true));
     }
 }
