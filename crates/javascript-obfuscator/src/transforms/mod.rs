@@ -3,6 +3,7 @@ pub mod boolean_literals;
 pub mod class_fields;
 pub mod console_output;
 pub mod directive_placement;
+pub mod domain_lock;
 pub mod escape_sequences;
 pub mod eval_call_expressions;
 pub mod export_specifiers;
@@ -34,6 +35,14 @@ pub fn apply_transforms(
     console_output::transform_console_output(
         program,
         options.disable_console_output.unwrap_or(false),
+    );
+    domain_lock::transform_domain_lock(
+        program,
+        options.domain_lock.as_deref().unwrap_or(&[]),
+        options
+            .domain_lock_redirect_url
+            .as_deref()
+            .unwrap_or("about:blank"),
     );
     export_specifiers::transform_export_specifiers(
         program,

@@ -441,6 +441,86 @@ mod tests {
     }
 
     #[test]
+    fn obfuscate_domain_lock_allows_configured_domain_at_runtime() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "domainLock": ["https://Example.com:9000/path"],
+            "domainLockRedirectUrl": "https://blocked.example/path",
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "stringArray": false,
+            "unicodeEscapeSequence": false
+        }))
+        .expect("domain lock options should deserialize");
+        let result =
+            obfuscate("globalThis.result = 'ran';", options).expect("obfuscation should succeed");
+
+        let output = run_node_source(&format!(
+            "const vm=require('node:vm');const sandbox={{document:{{domain:'example.com',location:{{hostname:'example.com'}}}},result:null}};vm.runInNewContext({},sandbox);console.log(sandbox.result+'|'+sandbox.document.location.hostname);",
+            serde_json::to_string(&result.code).expect("generated code should serialize")
+        ));
+
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "ran|example.com\n");
+        assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    }
+
+    #[test]
+    fn obfuscate_domain_lock_redirects_disallowed_domain_at_runtime() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "domainLock": [".example.com"],
+            "domainLockRedirectUrl": "https://blocked.example/path",
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "stringArray": false,
+            "unicodeEscapeSequence": false
+        }))
+        .expect("domain lock options should deserialize");
+        let result =
+            obfuscate("globalThis.result = 'ran';", options).expect("obfuscation should succeed");
+
+        assert!(result.code.contains("domainLock"), "{}", result.code);
+
+        let output = run_node_source(&format!(
+            "const vm=require('node:vm');const sandbox={{document:{{domain:'not-allowed.test',location:{{hostname:'not-allowed.test'}}}},result:null}};vm.runInNewContext({},sandbox);console.log(sandbox.result+'|'+sandbox.document.location);",
+            serde_json::to_string(&result.code).expect("generated code should serialize")
+        ));
+
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout),
+            "ran|https://blocked.example/path\n"
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    }
+
+    #[test]
+    fn obfuscate_domain_lock_empty_option_does_not_insert_helper() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "domainLock": [],
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "stringArray": false,
+            "unicodeEscapeSequence": false
+        }))
+        .expect("domain lock options should deserialize");
+        let result =
+            obfuscate("globalThis.result = 'ran';", options).expect("obfuscation should succeed");
+
+        assert!(!result.code.contains("domainLock"), "{}", result.code);
+    }
+
+    #[test]
     fn obfuscate_multiple_preserves_keys() {
         let mut input = BTreeMap::new();
         input.insert("first.js".to_string(), "const first = 1;".to_string());

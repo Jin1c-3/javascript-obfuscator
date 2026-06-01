@@ -67,6 +67,10 @@ pub struct Options {
     #[serde(default)]
     pub disable_console_output: Option<bool>,
     #[serde(default)]
+    pub domain_lock: Option<Vec<String>>,
+    #[serde(default)]
+    pub domain_lock_redirect_url: Option<String>,
+    #[serde(default)]
     pub source_map: Option<bool>,
     #[serde(default)]
     pub source_map_base_url: Option<String>,
@@ -305,6 +309,25 @@ mod tests {
         assert_eq!(
             serialized_options["stringArrayCallsTransformThreshold"],
             json!(0.25)
+        );
+    }
+
+    #[test]
+    fn deserializes_domain_lock_options_for_option_compatibility() {
+        let options: Options = serde_json::from_value(json!({
+            "domainLock": ["https://Example.com:9000/path"],
+            "domainLockRedirectUrl": "https://blocked.example/path"
+        }))
+        .expect("domain lock options should deserialize");
+        let serialized_options = serde_json::to_value(options).expect("options should serialize");
+
+        assert_eq!(
+            serialized_options["domainLock"],
+            json!(["https://Example.com:9000/path"])
+        );
+        assert_eq!(
+            serialized_options["domainLockRedirectUrl"],
+            json!("https://blocked.example/path")
         );
     }
 }
