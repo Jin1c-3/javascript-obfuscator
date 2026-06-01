@@ -9,6 +9,10 @@ pub fn transform_labeled_statements(
     identifiers_prefix: &str,
     identifiers_dictionary: &[String],
 ) {
+    if identifier_names_generator == IdentifierNamesGeneratorKind::KeepOriginal {
+        return;
+    }
+
     program.visit_mut_with(&mut LabeledStatementTransform {
         generator: IdentifierNamesGenerator::new(
             identifier_names_generator,
@@ -146,6 +150,20 @@ mod tests {
 
         assert!(
             code.contains("nice_label:for(;;){break nice_label;}"),
+            "{code}"
+        );
+    }
+
+    #[test]
+    fn keeps_original_label_names_with_keep_original_generator() {
+        let code = transform(
+            "label: for (;;) { continue label; break label; }",
+            IdentifierNamesGeneratorKind::KeepOriginal,
+            &[],
+        );
+
+        assert!(
+            code.contains("label:for(;;){continue label;break label;}"),
             "{code}"
         );
     }

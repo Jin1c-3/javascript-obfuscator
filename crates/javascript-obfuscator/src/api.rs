@@ -862,6 +862,22 @@ mod tests {
     }
 
     #[test]
+    fn obfuscate_keeps_labeled_statement_with_keep_original_generator() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "identifierNamesGenerator": "keep-original",
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "stringArray": false
+        }))
+        .expect("keep-original options should deserialize");
+        let result = obfuscate("label: for (;;) { break label; }", options)
+            .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("label:for(;;){break label;}"));
+    }
+
+    #[test]
     fn obfuscate_transforms_number_to_expression_when_enabled() {
         let result = obfuscate(
             "const value = 10;",

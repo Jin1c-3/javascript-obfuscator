@@ -55,6 +55,7 @@ const RESERVED_WORDS: &[&str] = &[
 pub enum IdentifierNamesGeneratorKind {
     #[default]
     Hexadecimal,
+    KeepOriginal,
     Mangled,
     MangledShuffled,
     Dictionary,
@@ -85,7 +86,10 @@ impl IdentifierNamesGenerator {
     pub fn generate_next(&mut self) -> String {
         loop {
             let raw_name = match self.kind {
-                IdentifierNamesGeneratorKind::Hexadecimal => format!("_0x{:x}", self.index),
+                IdentifierNamesGeneratorKind::Hexadecimal
+                | IdentifierNamesGeneratorKind::KeepOriginal => {
+                    format!("_0x{:x}", self.index)
+                }
                 IdentifierNamesGeneratorKind::Mangled => {
                     encode_name(self.index, MANGLED_FIRST_CHARS, MANGLED_NEXT_CHARS)
                 }
@@ -234,5 +238,17 @@ mod tests {
 
         assert_eq!(generator.generate_next(), "p_first_name");
         assert_eq!(generator.generate_next(), "p__2cool");
+    }
+
+    #[test]
+    fn keep_original_generator_uses_hexadecimal_names_for_internal_identifiers() {
+        let mut generator = IdentifierNamesGenerator::new(
+            IdentifierNamesGeneratorKind::KeepOriginal,
+            "",
+            Vec::new(),
+        );
+
+        assert_eq!(generator.generate_next(), "_0x0");
+        assert_eq!(generator.generate_next(), "_0x1");
     }
 }

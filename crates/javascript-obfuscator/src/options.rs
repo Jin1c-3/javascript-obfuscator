@@ -130,4 +130,17 @@ mod tests {
             Some(vec![StringArrayEncoding::Rc4])
         );
     }
+
+    #[test]
+    fn deserializes_keep_original_identifier_names_generator_for_option_compatibility() {
+        let options: Options = serde_json::from_value(json!({
+            "identifierNamesGenerator": "keep-original"
+        }))
+        .expect("keep-original identifier generator option should deserialize");
+
+        assert_eq!(
+            options.identifier_names_generator,
+            Some(IdentifierNamesGeneratorKind::KeepOriginal)
+        );
+    }
 }
