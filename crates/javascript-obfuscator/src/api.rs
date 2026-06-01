@@ -640,6 +640,23 @@ mod tests {
     }
 
     #[test]
+    fn obfuscate_transforms_computed_string_object_expression_key() {
+        let result = obfuscate(
+            "const value = {['foo']: bar};",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("const value={'foo':bar}"));
+    }
+
+    #[test]
     fn obfuscate_transforms_object_expression_shorthand_property() {
         let result = obfuscate(
             "const value = {foo};",

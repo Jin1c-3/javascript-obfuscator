@@ -1,5 +1,7 @@
 use swc_common::DUMMY_SP;
-use swc_ecma_ast::{Expr, KeyValueProp, ObjectLit, Program, Prop, PropName, PropOrSpread, Str};
+use swc_ecma_ast::{
+    Expr, KeyValueProp, Lit, ObjectLit, Program, Prop, PropName, PropOrSpread, Str,
+};
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 pub fn transform_object_expressions(program: &mut Program) {
@@ -50,11 +52,17 @@ fn transform_property(property: &mut Box<Prop>) {
 }
 
 fn transform_property_name(property_name: &mut PropName) {
-    let PropName::Ident(identifier) = property_name else {
-        return;
-    };
+    let name = match property_name {
+        PropName::Ident(identifier) => identifier.sym.to_string(),
+        PropName::Computed(computed_property_name) => {
+            let Expr::Lit(Lit::Str(string_literal)) = computed_property_name.expr.as_ref() else {
+                return;
+            };
 
-    let name = identifier.sym.to_string();
+            string_literal.value.to_string_lossy().into_owned()
+        }
+        _ => return,
+    };
     *property_name = create_string_property_name(&name);
 }
 
@@ -89,6 +97,13 @@ mod tests {
     #[test]
     fn transforms_identifier_property_key() {
         let code = transform("const value = {foo: bar};");
+
+        assert!(code.contains("const value={'foo':bar}"), "{code}");
+    }
+
+    #[test]
+    fn transforms_computed_string_property_key() {
+        let code = transform("const value = {['foo']: bar};");
 
         assert!(code.contains("const value={'foo':bar}"), "{code}");
     }
