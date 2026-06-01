@@ -1,3 +1,4 @@
+use regex::Regex;
 use swc_ecma_ast::{BreakStmt, ContinueStmt, LabeledStmt, Program};
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
@@ -20,19 +21,19 @@ pub fn transform_labeled_statements(
             identifiers_prefix,
             identifiers_dictionary.to_vec(),
         ),
-        reserved_names,
+        reserved_name_patterns: compile_patterns(reserved_names),
     });
 }
 
-struct LabeledStatementTransform<'a> {
+struct LabeledStatementTransform {
     generator: IdentifierNamesGenerator,
-    reserved_names: &'a [String],
+    reserved_name_patterns: Vec<Regex>,
 }
 
-impl VisitMut for LabeledStatementTransform<'_> {
+impl VisitMut for LabeledStatementTransform {
     fn visit_mut_labeled_stmt(&mut self, labeled_statement: &mut LabeledStmt) {
         let original_label_name = labeled_statement.label.sym.to_string();
-        if is_reserved_name(&original_label_name, self.reserved_names) {
+        if is_reserved_name(&original_label_name, &self.reserved_name_patterns) {
             return;
         }
 
@@ -49,10 +50,17 @@ impl VisitMut for LabeledStatementTransform<'_> {
     }
 }
 
-fn is_reserved_name(name: &str, reserved_names: &[String]) -> bool {
-    reserved_names
+fn is_reserved_name(name: &str, reserved_name_patterns: &[Regex]) -> bool {
+    reserved_name_patterns
         .iter()
-        .any(|reserved_name| reserved_name == name)
+        .any(|reserved_name_pattern| reserved_name_pattern.is_match(name))
+}
+
+fn compile_patterns(patterns: &[String]) -> Vec<Regex> {
+    patterns
+        .iter()
+        .filter_map(|pattern| Regex::new(pattern).ok())
+        .collect()
 }
 
 struct LabelReferenceTransform {
@@ -202,5 +210,22 @@ mod tests {
             code.contains("label:for(;;){continue label;break label;}"),
             "{code}"
         );
+    }
+
+    #[test]
+    fn keeps_reserved_names_regex_label_names() {
+        let reserved_names = vec!["^keep".to_string()];
+        let code = transform(
+            "keepLabel: for (;;) { continue keepLabel; } other: for (;;) { break other; }",
+            IdentifierNamesGeneratorKind::Hexadecimal,
+            &[],
+            &reserved_names,
+        );
+
+        assert!(
+            code.contains("keepLabel:for(;;){continue keepLabel;}"),
+            "{code}"
+        );
+        assert!(code.contains("_0x0:for(;;){break _0x0;}"), "{code}");
     }
 }

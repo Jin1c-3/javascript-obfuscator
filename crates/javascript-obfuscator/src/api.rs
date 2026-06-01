@@ -1012,6 +1012,28 @@ mod tests {
     }
 
     #[test]
+    fn obfuscate_keeps_reserved_names_regex_labeled_statement_name() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "reservedNames": ["^keep"],
+            "stringArray": false
+        }))
+        .expect("reserved names options should deserialize");
+        let result = obfuscate(
+            "keepLabel: for (;;) { continue keepLabel; } other: for (;;) { break other; }",
+            options,
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result
+            .code
+            .contains("keepLabel:for(;;){continue keepLabel;}"));
+        assert!(result.code.contains("_0x0:for(;;){break _0x0;}"));
+    }
+
+    #[test]
     fn obfuscate_transforms_number_to_expression_when_enabled() {
         let result = obfuscate(
             "const value = 10;",
