@@ -1427,6 +1427,40 @@ mod tests {
     }
 
     #[test]
+    fn obfuscate_respects_string_array_minimum_length_for_normal_strings() {
+        let result = obfuscate(
+            "const a = 'f'; const b = 'fo'; const c = 'foo';",
+            Options {
+                compact: Some(true),
+                string_array: Some(true),
+                string_array_threshold: Some(1.0),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                unicode_escape_sequence: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(
+            result.code.contains("const _0x0=['foo'];"),
+            "{}",
+            result.code
+        );
+        assert!(
+            result.code.contains("const a='f';const b='fo';"),
+            "{}",
+            result.code
+        );
+        assert!(
+            result.code.contains("const c=_0x1(0x0);"),
+            "{}",
+            result.code
+        );
+        assert!(!result.code.contains("'f','fo','foo'"), "{}", result.code);
+    }
+
+    #[test]
     fn obfuscate_keeps_string_literals_when_string_array_disabled() {
         let result = obfuscate(
             "const value = 'test';",

@@ -14,6 +14,7 @@ use crate::options::{StringArrayEncoding, StringArrayIndexesType};
 use crate::parser::parse_program;
 
 const INDEX_SHIFT_AMOUNT: usize = 100;
+const MINIMUM_LENGTH_FOR_STRING_ARRAY: usize = 3;
 const ROTATION_AMOUNT: usize = 1;
 const SHIFTED_WRAPPER_NAME: &str = "_0x1";
 const BASE64_ALPHABET_SWAPPED: &[u8; 64] =
@@ -141,6 +142,10 @@ impl VisitMut for StringArrayTransform {
 
         if !is_force_transform_string {
             if self.threshold <= 0.0 {
+                return;
+            }
+
+            if !has_minimum_length_for_string_array(&value) {
                 return;
             }
 
@@ -843,6 +848,10 @@ fn is_matching_pattern(value: &str, patterns: &[Regex]) -> bool {
     patterns.iter().any(|pattern| pattern.is_match(value))
 }
 
+fn has_minimum_length_for_string_array(value: &str) -> bool {
+    value.encode_utf16().count() >= MINIMUM_LENGTH_FOR_STRING_ARRAY
+}
+
 #[cfg(test)]
 mod tests {
     use crate::codegen::generate_code;
@@ -938,6 +947,47 @@ mod tests {
         assert!(code.contains("const _0x0=['foo'];"), "{code}");
         assert!(code.contains("const foo=_0x1(0x0);"), "{code}");
         assert!(code.contains("const bar='bar';"), "{code}");
+    }
+
+    #[test]
+    fn respects_string_array_minimum_length_for_normal_strings() {
+        let code = transform(
+            "const a = 'f'; const b = 'fo'; const c = 'foo';",
+            true,
+            &[],
+            false,
+        );
+
+        assert!(code.contains("const _0x0=['foo'];"), "{code}");
+        assert!(code.contains("const a='f';const b='fo';"), "{code}");
+        assert!(code.contains("const c=_0x1(0x0);"), "{code}");
+        assert!(!code.contains("'f','fo','foo'"), "{code}");
+    }
+
+    #[test]
+    fn force_transform_strings_override_string_array_minimum_length() {
+        let force_transform_strings = vec!["^f$".to_string()];
+        let mut parsed_program = parse_program("const value = 'f';").expect("source should parse");
+        transform_string_array(
+            &mut parsed_program.program,
+            StringArrayTransformOptions {
+                enabled: true,
+                threshold: 0.0,
+                indexes_type: &[],
+                encoding: StringArrayEncoding::None,
+                index_shift: false,
+                shuffle: false,
+                rotate: false,
+                reserved_strings: &[],
+                force_transform_strings: &force_transform_strings,
+                ignore_imports: false,
+            },
+        );
+        let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
+            .expect("code should generate");
+
+        assert!(code.contains("const _0x0=['f'];"), "{code}");
+        assert!(code.contains("const value=_0x1(0x0);"), "{code}");
     }
 
     #[test]
