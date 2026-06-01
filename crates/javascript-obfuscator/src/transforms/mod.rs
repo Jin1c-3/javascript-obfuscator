@@ -111,6 +111,10 @@ pub fn apply_transforms(
         string_array::StringArrayTransformOptions {
             enabled: options.string_array.unwrap_or(false),
             threshold: options.string_array_threshold.unwrap_or(1.0),
+            calls_transform: options.string_array_calls_transform.unwrap_or(false),
+            calls_transform_threshold: options
+                .string_array_calls_transform_threshold
+                .unwrap_or(0.5),
             indexes_type: options.string_array_indexes_type.as_deref().unwrap_or(&[]),
             encoding: select_supported_string_array_encoding(options),
             index_shift: options.string_array_index_shift.unwrap_or(false),

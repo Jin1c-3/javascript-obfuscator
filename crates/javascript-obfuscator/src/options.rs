@@ -21,6 +21,10 @@ pub struct Options {
     #[serde(default)]
     pub string_array_threshold: Option<f64>,
     #[serde(default)]
+    pub string_array_calls_transform: Option<bool>,
+    #[serde(default)]
+    pub string_array_calls_transform_threshold: Option<f64>,
+    #[serde(default)]
     pub string_array_encoding: Option<Vec<StringArrayEncoding>>,
     #[serde(default)]
     pub string_array_indexes_type: Option<Vec<StringArrayIndexesType>>,
@@ -285,6 +289,22 @@ mod tests {
         assert_eq!(
             options.string_array_wrappers_type,
             Some(StringArrayWrappersType::Variable)
+        );
+    }
+
+    #[test]
+    fn deserializes_string_array_calls_transform_options_for_option_compatibility() {
+        let options: Options = serde_json::from_value(json!({
+            "stringArrayCallsTransform": true,
+            "stringArrayCallsTransformThreshold": 0.25
+        }))
+        .expect("string array calls transform options should deserialize");
+        let serialized_options = serde_json::to_value(options).expect("options should serialize");
+
+        assert_eq!(serialized_options["stringArrayCallsTransform"], json!(true));
+        assert_eq!(
+            serialized_options["stringArrayCallsTransformThreshold"],
+            json!(0.25)
         );
     }
 }

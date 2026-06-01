@@ -3,9 +3,10 @@ use std::collections::BTreeMap;
 use regex::Regex;
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::{
-    ArrayLit, BinExpr, BinaryOp, BindingIdent, BlockStmt, CallExpr, Callee, ComputedPropName, Decl,
-    Expr, ExprOrSpread, FnDecl, Function, Ident, Lit, MemberExpr, MemberProp, ModuleDecl,
-    ModuleItem, Number, Param, Pat, Program, ReturnStmt, Stmt, Str, VarDecl, VarDeclKind,
+    ArrayLit, ArrowExpr, BinExpr, BinaryOp, BindingIdent, BlockStmt, BlockStmtOrExpr, CallExpr,
+    Callee, ComputedPropName, Decl, Expr, ExprOrSpread, FnDecl, Function, Ident, IdentName,
+    KeyValueProp, Lit, MemberExpr, MemberProp, ModuleDecl, ModuleItem, Number, ObjectLit, Param,
+    Pat, Program, Prop, PropName, PropOrSpread, ReturnStmt, Stmt, Str, VarDecl, VarDeclKind,
     VarDeclarator,
 };
 use swc_ecma_visit::{VisitMut, VisitMutWith};
@@ -24,6 +25,8 @@ const DEFAULT_RC4_KEY: &str = "rc4K";
 pub struct StringArrayTransformOptions<'a> {
     pub enabled: bool,
     pub threshold: f64,
+    pub calls_transform: bool,
+    pub calls_transform_threshold: f64,
     pub indexes_type: &'a [StringArrayIndexesType],
     pub encoding: StringArrayEncoding,
     pub index_shift: bool,
@@ -103,6 +106,10 @@ pub fn transform_string_array(program: &mut Program, options: StringArrayTransfo
             &active_call_wrappers,
             &index_remap,
         );
+    }
+
+    if options.calls_transform && options.calls_transform_threshold > 0.0 && wrapper_enabled {
+        transform_string_array_calls(program, &active_call_wrappers, wrappers.len());
     }
 
     insert_string_array_declarations(
@@ -378,6 +385,98 @@ fn remap_string_array_indexes(
     });
 }
 
+fn transform_string_array_calls(
+    program: &mut Program,
+    call_wrappers: &[StringArrayCallWrapper],
+    used_wrapper_count: usize,
+) {
+    program.visit_mut_with(&mut StringArrayCallsTransform {
+        call_wrappers,
+        next_storage_index: 2 + used_wrapper_count,
+    });
+}
+
+struct StringArrayCallsTransform<'a> {
+    call_wrappers: &'a [StringArrayCallWrapper],
+    next_storage_index: usize,
+}
+
+impl VisitMut for StringArrayCallsTransform<'_> {
+    fn visit_mut_function(&mut self, function: &mut Function) {
+        if let Some(body) = &mut function.body {
+            self.transform_block_body(body);
+        }
+
+        function.visit_mut_children_with(self);
+    }
+
+    fn visit_mut_arrow_expr(&mut self, arrow_expression: &mut ArrowExpr) {
+        if let BlockStmtOrExpr::BlockStmt(body) = arrow_expression.body.as_mut() {
+            self.transform_block_body(body);
+        }
+
+        arrow_expression.visit_mut_children_with(self);
+    }
+}
+
+impl StringArrayCallsTransform<'_> {
+    fn transform_block_body(&mut self, body: &mut BlockStmt) {
+        let storage_name = format!("_0x{}", self.next_storage_index);
+        let mut body_transform = FunctionStringArrayCallsTransform {
+            call_wrappers: self.call_wrappers,
+            storage_name: storage_name.clone(),
+            entries: Vec::new(),
+        };
+
+        body.visit_mut_with(&mut body_transform);
+
+        if body_transform.entries.is_empty() {
+            return;
+        }
+
+        self.next_storage_index += 1;
+        body.stmts.insert(
+            0,
+            create_string_array_calls_storage_statement(&storage_name, body_transform.entries),
+        );
+    }
+}
+
+struct FunctionStringArrayCallsTransform<'a> {
+    call_wrappers: &'a [StringArrayCallWrapper],
+    storage_name: String,
+    entries: Vec<(String, Expr)>,
+}
+
+impl VisitMut for FunctionStringArrayCallsTransform<'_> {
+    fn visit_mut_function(&mut self, _function: &mut Function) {}
+
+    fn visit_mut_arrow_expr(&mut self, _arrow_expression: &mut ArrowExpr) {}
+
+    fn visit_mut_call_expr(&mut self, call_expression: &mut CallExpr) {
+        call_expression.visit_mut_children_with(self);
+
+        if string_array_call_wrapper_for_call(call_expression, self.call_wrappers).is_none() {
+            return;
+        }
+
+        let Some(first_argument) = call_expression.args.first_mut() else {
+            return;
+        };
+
+        if !is_generated_string_array_call_index_literal(first_argument.expr.as_ref()) {
+            return;
+        }
+
+        let storage_key = format!("_0x{}", self.entries.len());
+        let original_argument = first_argument.expr.as_ref().clone();
+
+        self.entries.push((storage_key.clone(), original_argument));
+        *first_argument.expr =
+            create_string_array_calls_storage_member_expression(&self.storage_name, &storage_key);
+    }
+}
+
 fn insert_string_array_declarations(
     program: &mut Program,
     storage_name: &str,
@@ -467,6 +566,38 @@ fn create_storage_statement(
                         Some(create_expr_or_spread(create_string_literal(
                             &value.encoded_value,
                         )))
+                    })
+                    .collect(),
+            }))),
+            definite: false,
+        }],
+    })))
+}
+
+fn create_string_array_calls_storage_statement(
+    storage_name: &str,
+    entries: Vec<(String, Expr)>,
+) -> Stmt {
+    Stmt::Decl(Decl::Var(Box::new(VarDecl {
+        span: DUMMY_SP,
+        ctxt: Default::default(),
+        kind: VarDeclKind::Const,
+        declare: false,
+        decls: vec![VarDeclarator {
+            span: DUMMY_SP,
+            name: Pat::Ident(BindingIdent {
+                id: create_identifier(storage_name),
+                type_ann: None,
+            }),
+            init: Some(Box::new(Expr::Object(ObjectLit {
+                span: DUMMY_SP,
+                props: entries
+                    .into_iter()
+                    .map(|(key, value)| {
+                        PropOrSpread::Prop(Box::new(Prop::KeyValue(KeyValueProp {
+                            key: PropName::Ident(IdentName::from(key)),
+                            value: Box::new(value),
+                        })))
                     })
                     .collect(),
             }))),
@@ -827,6 +958,17 @@ fn create_string_array_member_expression_with_property(storage_name: &str, prope
     })
 }
 
+fn create_string_array_calls_storage_member_expression(
+    storage_name: &str,
+    storage_key: &str,
+) -> Expr {
+    Expr::Member(MemberExpr {
+        span: DUMMY_SP,
+        obj: Box::new(Expr::Ident(create_identifier(storage_name))),
+        prop: MemberProp::Ident(IdentName::from(storage_key.to_string())),
+    })
+}
+
 fn create_identifier(name: &str) -> Ident {
     Ident::from(name.to_string())
 }
@@ -1032,6 +1174,18 @@ fn index_from_literal(expression: &Expr) -> Option<usize> {
     }
 }
 
+fn is_generated_string_array_call_index_literal(expression: &Expr) -> bool {
+    match expression {
+        Expr::Lit(Lit::Num(number)) if number.span == DUMMY_SP => {
+            index_from_literal(expression).is_some()
+        }
+        Expr::Lit(Lit::Str(string)) if string.span == DUMMY_SP => {
+            index_from_literal(expression).is_some()
+        }
+        _ => false,
+    }
+}
+
 fn parse_index_string(value: &str) -> Option<usize> {
     if let Some(hexadecimal) = value
         .strip_prefix("0x")
@@ -1145,6 +1299,8 @@ mod tests {
             StringArrayTransformOptions {
                 enabled,
                 threshold: 1.0,
+                calls_transform: false,
+                calls_transform_threshold: 0.0,
                 indexes_type: &[],
                 encoding: StringArrayEncoding::None,
                 index_shift: false,
@@ -1250,6 +1406,8 @@ mod tests {
             StringArrayTransformOptions {
                 enabled: true,
                 threshold: 0.0,
+                calls_transform: false,
+                calls_transform_threshold: 0.0,
                 indexes_type: &[],
                 encoding: StringArrayEncoding::None,
                 index_shift: false,
@@ -1293,6 +1451,8 @@ mod tests {
             StringArrayTransformOptions {
                 enabled: true,
                 threshold: 0.0,
+                calls_transform: false,
+                calls_transform_threshold: 0.0,
                 indexes_type: &[],
                 encoding: StringArrayEncoding::None,
                 index_shift: false,
@@ -1323,6 +1483,8 @@ mod tests {
             StringArrayTransformOptions {
                 enabled: true,
                 threshold: 0.0,
+                calls_transform: false,
+                calls_transform_threshold: 0.0,
                 indexes_type: &[],
                 encoding: StringArrayEncoding::None,
                 index_shift: false,
@@ -1355,6 +1517,8 @@ mod tests {
             StringArrayTransformOptions {
                 enabled: true,
                 threshold: 0.0,
+                calls_transform: false,
+                calls_transform_threshold: 0.0,
                 indexes_type: &[],
                 encoding: StringArrayEncoding::None,
                 index_shift: false,
@@ -1385,6 +1549,8 @@ mod tests {
             StringArrayTransformOptions {
                 enabled: true,
                 threshold: 1.0,
+                calls_transform: false,
+                calls_transform_threshold: 0.0,
                 indexes_type: &[],
                 encoding: StringArrayEncoding::None,
                 index_shift: false,
@@ -1418,6 +1584,8 @@ mod tests {
             StringArrayTransformOptions {
                 enabled: true,
                 threshold: 1.0,
+                calls_transform: false,
+                calls_transform_threshold: 0.0,
                 indexes_type: &[StringArrayIndexesType::HexadecimalNumericString],
                 encoding: StringArrayEncoding::None,
                 index_shift: false,
@@ -1446,6 +1614,8 @@ mod tests {
             StringArrayTransformOptions {
                 enabled: true,
                 threshold: 1.0,
+                calls_transform: false,
+                calls_transform_threshold: 0.0,
                 indexes_type: &[],
                 encoding: StringArrayEncoding::None,
                 index_shift: true,
@@ -1482,6 +1652,8 @@ mod tests {
             StringArrayTransformOptions {
                 enabled: true,
                 threshold: 1.0,
+                calls_transform: false,
+                calls_transform_threshold: 0.0,
                 indexes_type: &[],
                 encoding: StringArrayEncoding::None,
                 index_shift: true,
@@ -1519,6 +1691,8 @@ mod tests {
             StringArrayTransformOptions {
                 enabled: true,
                 threshold: 1.0,
+                calls_transform: false,
+                calls_transform_threshold: 0.0,
                 indexes_type: &[],
                 encoding: StringArrayEncoding::None,
                 index_shift: true,
@@ -1558,6 +1732,8 @@ mod tests {
             StringArrayTransformOptions {
                 enabled: true,
                 threshold: 1.0,
+                calls_transform: false,
+                calls_transform_threshold: 0.0,
                 indexes_type: &[],
                 encoding: StringArrayEncoding::None,
                 index_shift: true,
@@ -1597,6 +1773,8 @@ mod tests {
             StringArrayTransformOptions {
                 enabled: true,
                 threshold: 1.0,
+                calls_transform: false,
+                calls_transform_threshold: 0.0,
                 indexes_type: &[],
                 encoding: StringArrayEncoding::None,
                 index_shift: true,
@@ -1633,6 +1811,8 @@ mod tests {
             StringArrayTransformOptions {
                 enabled: true,
                 threshold: 1.0,
+                calls_transform: false,
+                calls_transform_threshold: 0.0,
                 indexes_type: &[],
                 encoding: StringArrayEncoding::Base64,
                 index_shift: false,
@@ -1666,6 +1846,8 @@ mod tests {
             StringArrayTransformOptions {
                 enabled: true,
                 threshold: 1.0,
+                calls_transform: false,
+                calls_transform_threshold: 0.0,
                 indexes_type: &[],
                 encoding: StringArrayEncoding::Rc4,
                 index_shift: false,
