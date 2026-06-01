@@ -2793,6 +2793,47 @@ mod tests {
     }
 
     #[test]
+    fn obfuscate_rc4_string_array_self_defending_adds_atob_guard_and_decodes_at_runtime() {
+        let result = obfuscate(
+            "console.log(['foo', 'bar', 'baz'].join('|'));",
+            Options {
+                compact: Some(true),
+                self_defending: Some(true),
+                string_array: Some(true),
+                string_array_threshold: Some(1.0),
+                string_array_encoding: Some(vec![crate::options::StringArrayEncoding::Rc4]),
+                string_array_index_shift: Some(true),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                unicode_escape_sequence: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("func.charCodeAt"), "{}", result.code);
+        assert!(
+            result.code.contains("function(){return 0;}"),
+            "{}",
+            result.code
+        );
+        assert!(result.code.contains("_0xselfDefending"), "{}", result.code);
+
+        let output = Command::new("node")
+            .arg("-e")
+            .arg(&result.code)
+            .output()
+            .expect("node should execute generated code");
+
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "foo|bar|baz\n");
+    }
+
+    #[test]
     fn obfuscate_base64_string_array_encoding_decodes_at_runtime() {
         let result = obfuscate(
             "console.log(['f', 'fo', 'foo', 'test', '✓'].join('|'));",
@@ -2809,6 +2850,47 @@ mod tests {
             },
         )
         .expect("obfuscation should succeed");
+
+        let output = Command::new("node")
+            .arg("-e")
+            .arg(&result.code)
+            .output()
+            .expect("node should execute generated code");
+
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "f|fo|foo|test|✓\n");
+    }
+
+    #[test]
+    fn obfuscate_base64_string_array_self_defending_adds_atob_guard_and_decodes_at_runtime() {
+        let result = obfuscate(
+            "console.log(['f', 'fo', 'foo', 'test', '✓'].join('|'));",
+            Options {
+                compact: Some(true),
+                self_defending: Some(true),
+                string_array: Some(true),
+                string_array_threshold: Some(1.0),
+                string_array_encoding: Some(vec![crate::options::StringArrayEncoding::Base64]),
+                string_array_index_shift: Some(true),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                unicode_escape_sequence: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("func.charCodeAt"), "{}", result.code);
+        assert!(
+            result.code.contains("function(){return 0;}"),
+            "{}",
+            result.code
+        );
+        assert!(result.code.contains("_0xselfDefending"), "{}", result.code);
 
         let output = Command::new("node")
             .arg("-e")

@@ -38,6 +38,7 @@ pub struct StringArrayTransformOptions<'a> {
     pub wrappers_count: usize,
     pub wrappers_parameters_max_count: usize,
     pub wrappers_type: StringArrayWrappersType,
+    pub self_defending: bool,
 }
 
 pub fn transform_string_array(program: &mut Program, options: StringArrayTransformOptions<'_>) {
@@ -119,6 +120,7 @@ pub fn transform_string_array(program: &mut Program, options: StringArrayTransfo
         options.index_shift,
         encoding,
         &wrappers,
+        options.self_defending,
     );
 }
 
@@ -516,6 +518,7 @@ fn insert_string_array_declarations(
     index_shift_enabled: bool,
     encoding: StringArrayEncoding,
     wrappers: &[StringArrayCallWrapper],
+    self_defending: bool,
 ) {
     let mut statements = vec![create_storage_statement(storage_name, values)];
 
@@ -526,6 +529,7 @@ fn insert_string_array_declarations(
             INDEX_SHIFT_AMOUNT,
             index_shift_enabled,
             encoding,
+            self_defending,
         ));
         statements.extend(
             wrappers
@@ -1034,6 +1038,7 @@ fn create_string_array_wrapper_statement(
     shift_amount: usize,
     index_shift_enabled: bool,
     encoding: StringArrayEncoding,
+    self_defending: bool,
 ) -> Stmt {
     match encoding {
         StringArrayEncoding::None => create_index_shift_wrapper_statement(
@@ -1047,12 +1052,14 @@ fn create_string_array_wrapper_statement(
             wrapper_name,
             shift_amount,
             index_shift_enabled,
+            self_defending,
         ),
         StringArrayEncoding::Rc4 => create_rc4_wrapper_statement(
             storage_name,
             wrapper_name,
             shift_amount,
             index_shift_enabled,
+            self_defending,
         ),
     }
 }
@@ -1062,14 +1069,23 @@ fn create_base64_wrapper_statement(
     wrapper_name: &str,
     shift_amount: usize,
     index_shift_enabled: bool,
+    self_defending: bool,
 ) -> Stmt {
     let index_expression = if index_shift_enabled {
         format!("index-0x{shift_amount:x}")
     } else {
         "index".to_string()
     };
+    let self_defending_prelude = if self_defending {
+        format!(
+            "let func=output+{wrapper_name};let __=(''+function(){{return 0;}}).indexOf('\\n')!==-0x1;"
+        )
+    } else {
+        String::new()
+    };
+    let decoded_character_expression = guarded_base64_character_expression(self_defending);
     let wrapper_source = format!(
-        "function {wrapper_name}(index){{let value={storage_name}[{index_expression}];const chars='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/=';let output='';let tempEncodedString='';for(let bc=0,bs,buffer,idx=0;buffer=value.charAt(idx++);~buffer&&(bs=bc%4?bs*64+buffer:buffer,bc++%4)?output+=String.fromCharCode(0xff&bs>>(-0x2*bc&0x6)):0){{buffer=chars.indexOf(buffer);}}for(let k=0,length=output.length;k<length;k++){{tempEncodedString+='%'+('00'+output.charCodeAt(k).toString(0x10)).slice(-0x2);}}return decodeURIComponent(tempEncodedString);}}"
+        "function {wrapper_name}(index){{let value={storage_name}[{index_expression}];const chars='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/=';let output='';let tempEncodedString='';{self_defending_prelude}for(let bc=0,bs,buffer,idx=0;buffer=value.charAt(idx++);~buffer&&(bs=bc%4?bs*64+buffer:buffer,bc++%4)?output+={decoded_character_expression}:0){{buffer=chars.indexOf(buffer);}}for(let k=0,length=output.length;k<length;k++){{tempEncodedString+='%'+('00'+output.charCodeAt(k).toString(0x10)).slice(-0x2);}}return decodeURIComponent(tempEncodedString);}}"
     );
     let parsed_program = parse_program(&wrapper_source).expect("base64 wrapper should parse");
 
@@ -1095,14 +1111,23 @@ fn create_rc4_wrapper_statement(
     wrapper_name: &str,
     shift_amount: usize,
     index_shift_enabled: bool,
+    self_defending: bool,
 ) -> Stmt {
     let index_expression = if index_shift_enabled {
         format!("index-0x{shift_amount:x}")
     } else {
         "index".to_string()
     };
+    let self_defending_prelude = if self_defending {
+        format!(
+            "let func=data+{wrapper_name};let __=(''+function(){{return 0;}}).indexOf('\\n')!==-0x1;"
+        )
+    } else {
+        String::new()
+    };
+    let decoded_character_expression = guarded_base64_character_expression(self_defending);
     let wrapper_source = format!(
-        "function {wrapper_name}(index,key){{let value={storage_name}[{index_expression}];const chars='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/=';let data='';for(let bc=0,bs,buffer,idx=0;buffer=value.charAt(idx++);~buffer&&(bs=bc%4?bs*64+buffer:buffer,bc++%4)?data+=String.fromCharCode(0xff&bs>>(-0x2*bc&0x6)):0){{buffer=chars.indexOf(buffer);}}let s=[],j=0,x,output='';let i;for(i=0;i<0x100;i++){{s[i]=i;}}for(i=0;i<0x100;i++){{j=(j+s[i]+key.charCodeAt(i%key.length))%0x100;x=s[i];s[i]=s[j];s[j]=x;}}i=0;j=0;for(let y=0;y<data.length;y++){{i=(i+0x1)%0x100;j=(j+s[i])%0x100;x=s[i];s[i]=s[j];s[j]=x;output+=String.fromCharCode(data.charCodeAt(y)^s[(s[i]+s[j])%0x100]);}}let tempEncodedString='';for(let k=0,length=output.length;k<length;k++){{tempEncodedString+='%'+('00'+output.charCodeAt(k).toString(0x10)).slice(-0x2);}}return decodeURIComponent(tempEncodedString);}}"
+        "function {wrapper_name}(index,key){{let value={storage_name}[{index_expression}];const chars='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/=';let data='';{self_defending_prelude}for(let bc=0,bs,buffer,idx=0;buffer=value.charAt(idx++);~buffer&&(bs=bc%4?bs*64+buffer:buffer,bc++%4)?data+={decoded_character_expression}:0){{buffer=chars.indexOf(buffer);}}let s=[],j=0,x,output='';let i;for(i=0;i<0x100;i++){{s[i]=i;}}for(i=0;i<0x100;i++){{j=(j+s[i]+key.charCodeAt(i%key.length))%0x100;x=s[i];s[i]=s[j];s[j]=x;}}i=0;j=0;for(let y=0;y<data.length;y++){{i=(i+0x1)%0x100;j=(j+s[i])%0x100;x=s[i];s[i]=s[j];s[j]=x;output+=String.fromCharCode(data.charCodeAt(y)^s[(s[i]+s[j])%0x100]);}}let tempEncodedString='';for(let k=0,length=output.length;k<length;k++){{tempEncodedString+='%'+('00'+output.charCodeAt(k).toString(0x10)).slice(-0x2);}}return decodeURIComponent(tempEncodedString);}}"
     );
     let parsed_program = parse_program(&wrapper_source).expect("rc4 wrapper should parse");
 
@@ -1120,6 +1145,16 @@ fn create_rc4_wrapper_statement(
                 ModuleItem::ModuleDecl(_) => None,
             })
             .expect("rc4 wrapper should contain a statement"),
+    }
+}
+
+fn guarded_base64_character_expression(self_defending: bool) -> &'static str {
+    let base_expression = "String.fromCharCode(0xff&bs>>(-0x2*bc&0x6))";
+
+    if self_defending {
+        "((__||func.charCodeAt(idx+0xa)-0xa!==0)?String.fromCharCode(0xff&bs>>(-0x2*bc&0x6)):bc)"
+    } else {
+        base_expression
     }
 }
 
@@ -1352,6 +1387,7 @@ mod tests {
                 wrappers_count: 0,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
+                self_defending: false,
             },
         );
         generate_code(&parsed_program.program, parsed_program.source_map, true)
@@ -1459,6 +1495,7 @@ mod tests {
                 wrappers_count: 0,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
+                self_defending: false,
             },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
@@ -1504,6 +1541,7 @@ mod tests {
                 wrappers_count: 0,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
+                self_defending: false,
             },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
@@ -1536,6 +1574,7 @@ mod tests {
                 wrappers_count: 0,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
+                self_defending: false,
             },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
@@ -1570,6 +1609,7 @@ mod tests {
                 wrappers_count: 0,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
+                self_defending: false,
             },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
@@ -1602,6 +1642,7 @@ mod tests {
                 wrappers_count: 0,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
+                self_defending: false,
             },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
@@ -1637,6 +1678,7 @@ mod tests {
                 wrappers_count: 0,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
+                self_defending: false,
             },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
@@ -1667,6 +1709,7 @@ mod tests {
                 wrappers_count: 0,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
+                self_defending: false,
             },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
@@ -1705,6 +1748,7 @@ mod tests {
                 wrappers_count: 0,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
+                self_defending: false,
             },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
@@ -1744,6 +1788,7 @@ mod tests {
                 wrappers_count: 2,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
+                self_defending: false,
             },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
@@ -1785,6 +1830,7 @@ mod tests {
                 wrappers_count: 2,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Function,
+                self_defending: false,
             },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
@@ -1826,6 +1872,7 @@ mod tests {
                 wrappers_count: 0,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
+                self_defending: false,
             },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
@@ -1864,6 +1911,7 @@ mod tests {
                 wrappers_count: 0,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
+                self_defending: false,
             },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
@@ -1899,6 +1947,7 @@ mod tests {
                 wrappers_count: 0,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
+                self_defending: false,
             },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)

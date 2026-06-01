@@ -157,6 +157,7 @@ pub fn apply_transforms(
                 .string_array_wrappers_parameters_max_count
                 .unwrap_or(2),
             wrappers_type: options.string_array_wrappers_type.unwrap_or_default(),
+            self_defending: options.self_defending.unwrap_or(false),
         },
     );
     escape_sequences::transform_escape_sequences(
