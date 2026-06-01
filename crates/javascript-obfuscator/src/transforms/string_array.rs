@@ -12,6 +12,7 @@ use swc_ecma_visit::{VisitMut, VisitMutWith};
 use crate::options::StringArrayIndexesType;
 
 const INDEX_SHIFT_AMOUNT: usize = 100;
+const ROTATION_AMOUNT: usize = 1;
 const SHIFTED_WRAPPER_NAME: &str = "_0x1";
 
 pub struct StringArrayTransformOptions<'a> {
@@ -20,6 +21,7 @@ pub struct StringArrayTransformOptions<'a> {
     pub indexes_type: &'a [StringArrayIndexesType],
     pub index_shift: bool,
     pub shuffle: bool,
+    pub rotate: bool,
     pub reserved_strings: &'a [String],
     pub ignore_imports: bool,
 }
@@ -51,6 +53,17 @@ pub fn transform_string_array(program: &mut Program, options: StringArrayTransfo
 
     if options.shuffle {
         let index_remap = reverse_string_array_values(&mut values);
+        remap_string_array_indexes(
+            program,
+            storage_name,
+            index_type,
+            options.index_shift,
+            &index_remap,
+        );
+    }
+
+    if options.rotate {
+        let index_remap = rotate_string_array_values(&mut values, ROTATION_AMOUNT);
         remap_string_array_indexes(
             program,
             storage_name,
@@ -198,6 +211,24 @@ fn reverse_string_array_values(values: &mut [String]) -> Vec<usize> {
     values.reverse();
 
     index_remap
+}
+
+fn rotate_string_array_values(values: &mut [String], rotation_amount: usize) -> Vec<usize> {
+    let length = values.len();
+    if length == 0 {
+        return Vec::new();
+    }
+
+    let normalized_rotation_amount = rotation_amount % length;
+    if normalized_rotation_amount == 0 {
+        return (0..length).collect();
+    }
+
+    values.rotate_right(normalized_rotation_amount);
+
+    (0..length)
+        .map(|index| (index + normalized_rotation_amount) % length)
+        .collect()
 }
 
 fn remap_string_array_indexes(
@@ -529,6 +560,7 @@ mod tests {
                 indexes_type: &[],
                 index_shift: false,
                 shuffle: false,
+                rotate: false,
                 reserved_strings,
                 ignore_imports,
             },
@@ -601,6 +633,7 @@ mod tests {
                 indexes_type: &[],
                 index_shift: false,
                 shuffle: false,
+                rotate: false,
                 reserved_strings: &[],
                 ignore_imports: false,
             },
@@ -624,6 +657,7 @@ mod tests {
                 indexes_type: &[StringArrayIndexesType::HexadecimalNumericString],
                 index_shift: false,
                 shuffle: false,
+                rotate: false,
                 reserved_strings: &[],
                 ignore_imports: false,
             },
@@ -646,6 +680,7 @@ mod tests {
                 indexes_type: &[],
                 index_shift: true,
                 shuffle: false,
+                rotate: false,
                 reserved_strings: &[],
                 ignore_imports: false,
             },
@@ -676,6 +711,7 @@ mod tests {
                 indexes_type: &[],
                 index_shift: true,
                 shuffle: true,
+                rotate: false,
                 reserved_strings: &[],
                 ignore_imports: false,
             },
@@ -690,6 +726,38 @@ mod tests {
         );
         assert!(
             code.contains("const first=_0x1(0x65);const second=_0x1(0x64);"),
+            "{code}"
+        );
+    }
+
+    #[test]
+    fn remaps_shifted_indexes_when_string_array_rotate_is_enabled() {
+        let mut parsed_program =
+            parse_program("const first = 'foo'; const second = 'bar'; const third = 'baz';")
+                .expect("source should parse");
+        transform_string_array(
+            &mut parsed_program.program,
+            StringArrayTransformOptions {
+                enabled: true,
+                threshold: 1.0,
+                indexes_type: &[],
+                index_shift: true,
+                shuffle: false,
+                rotate: true,
+                reserved_strings: &[],
+                ignore_imports: false,
+            },
+        );
+        let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
+            .expect("code should generate");
+
+        assert!(code.contains("const _0x0=['baz','foo','bar'];"), "{code}");
+        assert!(
+            code.contains("function _0x1(index){return _0x0[index-0x64];}"),
+            "{code}"
+        );
+        assert!(
+            code.contains("const first=_0x1(0x65);const second=_0x1(0x66);const third=_0x1(0x64);"),
             "{code}"
         );
     }

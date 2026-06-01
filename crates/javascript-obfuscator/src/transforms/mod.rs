@@ -80,6 +80,7 @@ pub fn apply_transforms(program: &mut Program, options: &Options) {
             indexes_type: options.string_array_indexes_type.as_deref().unwrap_or(&[]),
             index_shift: options.string_array_index_shift.unwrap_or(false),
             shuffle: options.string_array_shuffle.unwrap_or(false),
+            rotate: options.string_array_rotate.unwrap_or(false),
             reserved_strings: options.reserved_strings.as_deref().unwrap_or(&[]),
             ignore_imports: options.ignore_imports.unwrap_or(false),
         },

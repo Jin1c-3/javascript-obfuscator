@@ -25,6 +25,8 @@ pub struct Options {
     #[serde(default)]
     pub string_array_shuffle: Option<bool>,
     #[serde(default)]
+    pub string_array_rotate: Option<bool>,
+    #[serde(default)]
     pub ignore_imports: Option<bool>,
     #[serde(default)]
     pub rename_globals: Option<bool>,
