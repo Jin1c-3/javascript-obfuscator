@@ -19,6 +19,8 @@ pub struct Options {
     #[serde(default)]
     pub string_array_threshold: Option<f64>,
     #[serde(default)]
+    pub string_array_encoding: Option<Vec<StringArrayEncoding>>,
+    #[serde(default)]
     pub string_array_indexes_type: Option<Vec<StringArrayIndexesType>>,
     #[serde(default)]
     pub string_array_index_shift: Option<bool>,
@@ -77,6 +79,15 @@ pub enum StringArrayIndexesType {
     HexadecimalNumericString,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StringArrayEncoding {
+    #[default]
+    None,
+    Base64,
+    Rc4,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ObfuscationResult {
@@ -96,5 +107,25 @@ impl ObfuscationResult {
             source_map,
             identifier_names_cache,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn deserializes_rc4_string_array_encoding_for_option_compatibility() {
+        let options: Options = serde_json::from_value(json!({
+            "stringArrayEncoding": ["rc4"]
+        }))
+        .expect("rc4 string array encoding option should deserialize");
+
+        assert_eq!(
+            options.string_array_encoding,
+            Some(vec![StringArrayEncoding::Rc4])
+        );
     }
 }

@@ -9,16 +9,20 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
-use crate::options::StringArrayIndexesType;
+use crate::options::{StringArrayEncoding, StringArrayIndexesType};
+use crate::parser::parse_program;
 
 const INDEX_SHIFT_AMOUNT: usize = 100;
 const ROTATION_AMOUNT: usize = 1;
 const SHIFTED_WRAPPER_NAME: &str = "_0x1";
+const BASE64_ALPHABET_SWAPPED: &[u8; 64] =
+    b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/";
 
 pub struct StringArrayTransformOptions<'a> {
     pub enabled: bool,
     pub threshold: f64,
     pub indexes_type: &'a [StringArrayIndexesType],
+    pub encoding: StringArrayEncoding,
     pub index_shift: bool,
     pub shuffle: bool,
     pub rotate: bool,
@@ -36,6 +40,7 @@ pub fn transform_string_array(program: &mut Program, options: StringArrayTransfo
         indexes_by_value: BTreeMap::new(),
         values: Vec::new(),
         index_type: first_index_type(options.indexes_type),
+        encoding: options.encoding,
         index_shift_enabled: options.index_shift,
         reserved_strings: options.reserved_strings,
         ignore_imports: options.ignore_imports,
@@ -49,6 +54,8 @@ pub fn transform_string_array(program: &mut Program, options: StringArrayTransfo
 
     let storage_name = transform.storage_name;
     let index_type = transform.index_type;
+    let encoding = options.encoding;
+    let wrapper_enabled = should_emit_string_array_wrapper(options.index_shift, encoding);
     let mut values = transform.values;
 
     if options.shuffle {
@@ -58,6 +65,7 @@ pub fn transform_string_array(program: &mut Program, options: StringArrayTransfo
             storage_name,
             index_type,
             options.index_shift,
+            wrapper_enabled,
             &index_remap,
         );
     }
@@ -69,11 +77,12 @@ pub fn transform_string_array(program: &mut Program, options: StringArrayTransfo
             storage_name,
             index_type,
             options.index_shift,
+            wrapper_enabled,
             &index_remap,
         );
     }
 
-    insert_string_array_declarations(program, storage_name, values, options.index_shift);
+    insert_string_array_declarations(program, storage_name, values, options.index_shift, encoding);
 }
 
 struct StringArrayTransform<'a> {
@@ -81,6 +90,7 @@ struct StringArrayTransform<'a> {
     indexes_by_value: BTreeMap<String, usize>,
     values: Vec<String>,
     index_type: StringArrayIndexesType,
+    encoding: StringArrayEncoding,
     index_shift_enabled: bool,
     reserved_strings: &'a [String],
     ignore_imports: bool,
@@ -120,6 +130,7 @@ impl VisitMut for StringArrayTransform<'_> {
             self.storage_name,
             index,
             self.index_type,
+            self.encoding,
             self.index_shift_enabled,
         );
     }
@@ -132,7 +143,8 @@ impl StringArrayTransform<'_> {
         }
 
         let index = self.values.len();
-        self.values.push(value.clone());
+        self.values
+            .push(encode_string_array_value(&value, self.encoding));
         self.indexes_by_value.insert(value, index);
         index
     }
@@ -142,6 +154,7 @@ struct StringArrayIndexRemapTransform<'a> {
     storage_name: &'static str,
     index_type: StringArrayIndexesType,
     index_shift_enabled: bool,
+    wrapper_enabled: bool,
     index_remap: &'a [usize],
 }
 
@@ -178,26 +191,34 @@ impl StringArrayIndexRemapTransform<'_> {
     }
 
     fn remap_call_expression(&self, call_expression: &mut CallExpr) {
-        if !self.index_shift_enabled || !is_identifier_callee(call_expression, SHIFTED_WRAPPER_NAME)
-        {
+        if !self.wrapper_enabled || !is_identifier_callee(call_expression, SHIFTED_WRAPPER_NAME) {
             return;
         }
 
         let Some(first_argument) = call_expression.args.first_mut() else {
             return;
         };
-        let Some(shifted_index) = index_from_literal(first_argument.expr.as_ref()) else {
+        let Some(encoded_index) = index_from_literal(first_argument.expr.as_ref()) else {
             return;
         };
-        let Some(old_index) = shifted_index.checked_sub(INDEX_SHIFT_AMOUNT) else {
-            return;
+        let old_index = if self.index_shift_enabled {
+            let Some(unshifted_index) = encoded_index.checked_sub(INDEX_SHIFT_AMOUNT) else {
+                return;
+            };
+            unshifted_index
+        } else {
+            encoded_index
         };
         let Some(new_index) = self.remapped_index(old_index) else {
             return;
         };
+        let remapped_index = if self.index_shift_enabled {
+            new_index + INDEX_SHIFT_AMOUNT
+        } else {
+            new_index
+        };
 
-        *first_argument.expr =
-            create_index_literal(new_index + INDEX_SHIFT_AMOUNT, self.index_type);
+        *first_argument.expr = create_index_literal(remapped_index, self.index_type);
     }
 
     fn remapped_index(&self, old_index: usize) -> Option<usize> {
@@ -236,12 +257,14 @@ fn remap_string_array_indexes(
     storage_name: &'static str,
     index_type: StringArrayIndexesType,
     index_shift_enabled: bool,
+    wrapper_enabled: bool,
     index_remap: &[usize],
 ) {
     program.visit_mut_with(&mut StringArrayIndexRemapTransform {
         storage_name,
         index_type,
         index_shift_enabled,
+        wrapper_enabled,
         index_remap,
     });
 }
@@ -251,14 +274,17 @@ fn insert_string_array_declarations(
     storage_name: &str,
     values: Vec<String>,
     index_shift_enabled: bool,
+    encoding: StringArrayEncoding,
 ) {
     let mut statements = vec![create_storage_statement(storage_name, values)];
 
-    if index_shift_enabled {
-        statements.push(create_index_shift_wrapper_statement(
+    if should_emit_string_array_wrapper(index_shift_enabled, encoding) {
+        statements.push(create_string_array_wrapper_statement(
             storage_name,
             SHIFTED_WRAPPER_NAME,
             INDEX_SHIFT_AMOUNT,
+            index_shift_enabled,
+            encoding,
         ));
     }
 
@@ -312,16 +338,67 @@ fn first_index_type(index_types: &[StringArrayIndexesType]) -> StringArrayIndexe
         .unwrap_or(StringArrayIndexesType::HexadecimalNumber)
 }
 
+fn should_emit_string_array_wrapper(
+    index_shift_enabled: bool,
+    encoding: StringArrayEncoding,
+) -> bool {
+    index_shift_enabled || matches!(encoding, StringArrayEncoding::Base64)
+}
+
+fn encode_string_array_value(value: &str, encoding: StringArrayEncoding) -> String {
+    match encoding {
+        StringArrayEncoding::None | StringArrayEncoding::Rc4 => value.to_string(),
+        StringArrayEncoding::Base64 => encode_base64_swapped(value),
+    }
+}
+
+fn encode_base64_swapped(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut encoded = String::with_capacity(bytes.len().div_ceil(3) * 4);
+
+    for chunk in bytes.chunks(3) {
+        let first = chunk[0];
+        let second = chunk.get(1).copied().unwrap_or(0);
+        let third = chunk.get(2).copied().unwrap_or(0);
+
+        encoded.push(BASE64_ALPHABET_SWAPPED[(first >> 2) as usize] as char);
+        encoded.push(
+            BASE64_ALPHABET_SWAPPED[(((first & 0b0000_0011) << 4) | (second >> 4)) as usize]
+                as char,
+        );
+
+        if chunk.len() > 1 {
+            encoded.push(
+                BASE64_ALPHABET_SWAPPED[(((second & 0b0000_1111) << 2) | (third >> 6)) as usize]
+                    as char,
+            );
+        }
+
+        if chunk.len() > 2 {
+            encoded.push(BASE64_ALPHABET_SWAPPED[(third & 0b0011_1111) as usize] as char);
+        }
+    }
+
+    encoded
+}
+
 fn create_string_array_reference_expression(
     storage_name: &str,
     index: usize,
     index_type: StringArrayIndexesType,
+    encoding: StringArrayEncoding,
     index_shift_enabled: bool,
 ) -> Expr {
-    if index_shift_enabled {
+    if should_emit_string_array_wrapper(index_shift_enabled, encoding) {
+        let wrapper_index = if index_shift_enabled {
+            index + INDEX_SHIFT_AMOUNT
+        } else {
+            index
+        };
+
         return create_string_array_call_expression(
             SHIFTED_WRAPPER_NAME,
-            index + INDEX_SHIFT_AMOUNT,
+            wrapper_index,
             index_type,
         );
     }
@@ -392,6 +469,59 @@ fn create_number_literal(value: usize) -> Expr {
         value: value as f64,
         raw: Some(format!("0x{value:x}").into()),
     }))
+}
+
+fn create_string_array_wrapper_statement(
+    storage_name: &str,
+    wrapper_name: &str,
+    shift_amount: usize,
+    index_shift_enabled: bool,
+    encoding: StringArrayEncoding,
+) -> Stmt {
+    match encoding {
+        StringArrayEncoding::None | StringArrayEncoding::Rc4 => {
+            create_index_shift_wrapper_statement(storage_name, wrapper_name, shift_amount)
+        }
+        StringArrayEncoding::Base64 => create_base64_wrapper_statement(
+            storage_name,
+            wrapper_name,
+            shift_amount,
+            index_shift_enabled,
+        ),
+    }
+}
+
+fn create_base64_wrapper_statement(
+    storage_name: &str,
+    wrapper_name: &str,
+    shift_amount: usize,
+    index_shift_enabled: bool,
+) -> Stmt {
+    let index_expression = if index_shift_enabled {
+        format!("index-0x{shift_amount:x}")
+    } else {
+        "index".to_string()
+    };
+    let wrapper_source = format!(
+        "function {wrapper_name}(index){{let value={storage_name}[{index_expression}];const chars='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/=';let output='';let tempEncodedString='';for(let bc=0,bs,buffer,idx=0;buffer=value.charAt(idx++);~buffer&&(bs=bc%4?bs*64+buffer:buffer,bc++%4)?output+=String.fromCharCode(0xff&bs>>(-0x2*bc&0x6)):0){{buffer=chars.indexOf(buffer);}}for(let k=0,length=output.length;k<length;k++){{tempEncodedString+='%'+('00'+output.charCodeAt(k).toString(0x10)).slice(-0x2);}}return decodeURIComponent(tempEncodedString);}}"
+    );
+    let parsed_program = parse_program(&wrapper_source).expect("base64 wrapper should parse");
+
+    match parsed_program.program {
+        Program::Script(script) => script
+            .body
+            .into_iter()
+            .next()
+            .expect("base64 wrapper should contain a statement"),
+        Program::Module(module) => module
+            .body
+            .into_iter()
+            .find_map(|item| match item {
+                ModuleItem::Stmt(statement) => Some(statement),
+                ModuleItem::ModuleDecl(_) => None,
+            })
+            .expect("base64 wrapper should contain a statement"),
+    }
 }
 
 fn create_index_shift_wrapper_statement(
@@ -558,6 +688,7 @@ mod tests {
                 enabled,
                 threshold: 1.0,
                 indexes_type: &[],
+                encoding: StringArrayEncoding::None,
                 index_shift: false,
                 shuffle: false,
                 rotate: false,
@@ -631,6 +762,7 @@ mod tests {
                 enabled: true,
                 threshold: 0.0,
                 indexes_type: &[],
+                encoding: StringArrayEncoding::None,
                 index_shift: false,
                 shuffle: false,
                 rotate: false,
@@ -655,6 +787,7 @@ mod tests {
                 enabled: true,
                 threshold: 1.0,
                 indexes_type: &[StringArrayIndexesType::HexadecimalNumericString],
+                encoding: StringArrayEncoding::None,
                 index_shift: false,
                 shuffle: false,
                 rotate: false,
@@ -678,6 +811,7 @@ mod tests {
                 enabled: true,
                 threshold: 1.0,
                 indexes_type: &[],
+                encoding: StringArrayEncoding::None,
                 index_shift: true,
                 shuffle: false,
                 rotate: false,
@@ -709,6 +843,7 @@ mod tests {
                 enabled: true,
                 threshold: 1.0,
                 indexes_type: &[],
+                encoding: StringArrayEncoding::None,
                 index_shift: true,
                 shuffle: true,
                 rotate: false,
@@ -741,6 +876,7 @@ mod tests {
                 enabled: true,
                 threshold: 1.0,
                 indexes_type: &[],
+                encoding: StringArrayEncoding::None,
                 index_shift: true,
                 shuffle: false,
                 rotate: true,
@@ -758,6 +894,35 @@ mod tests {
         );
         assert!(
             code.contains("const first=_0x1(0x65);const second=_0x1(0x66);const third=_0x1(0x64);"),
+            "{code}"
+        );
+    }
+
+    #[test]
+    fn remaps_base64_wrapper_indexes_when_string_array_shuffle_is_enabled() {
+        let mut parsed_program = parse_program("const first = 'foo'; const second = 'bar';")
+            .expect("source should parse");
+        transform_string_array(
+            &mut parsed_program.program,
+            StringArrayTransformOptions {
+                enabled: true,
+                threshold: 1.0,
+                indexes_type: &[],
+                encoding: StringArrayEncoding::Base64,
+                index_shift: false,
+                shuffle: true,
+                rotate: false,
+                reserved_strings: &[],
+                ignore_imports: false,
+            },
+        );
+        let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
+            .expect("code should generate");
+
+        assert!(code.contains("const _0x0=['yMfY','zM9V'];"), "{code}");
+        assert!(code.contains("function _0x1(index)"), "{code}");
+        assert!(
+            code.contains("const first=_0x1(0x1);const second=_0x1(0x0);"),
             "{code}"
         );
     }

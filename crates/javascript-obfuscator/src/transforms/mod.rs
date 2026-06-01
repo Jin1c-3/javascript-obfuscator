@@ -20,7 +20,7 @@ pub mod variable_declarations_merge;
 
 use swc_ecma_ast::Program;
 
-use crate::options::Options;
+use crate::options::{Options, StringArrayEncoding};
 
 pub fn apply_transforms(program: &mut Program, options: &Options) {
     export_specifiers::transform_export_specifiers(
@@ -78,6 +78,7 @@ pub fn apply_transforms(program: &mut Program, options: &Options) {
             enabled: options.string_array.unwrap_or(false),
             threshold: options.string_array_threshold.unwrap_or(1.0),
             indexes_type: options.string_array_indexes_type.as_deref().unwrap_or(&[]),
+            encoding: select_supported_string_array_encoding(options),
             index_shift: options.string_array_index_shift.unwrap_or(false),
             shuffle: options.string_array_shuffle.unwrap_or(false),
             rotate: options.string_array_rotate.unwrap_or(false),
@@ -92,4 +93,19 @@ pub fn apply_transforms(program: &mut Program, options: &Options) {
         options.ignore_imports.unwrap_or(false),
     );
     directive_placement::transform_directive_placement(program);
+}
+
+fn select_supported_string_array_encoding(options: &Options) -> StringArrayEncoding {
+    options
+        .string_array_encoding
+        .as_deref()
+        .and_then(|encodings| {
+            encodings.iter().copied().find(|encoding| {
+                matches!(
+                    encoding,
+                    StringArrayEncoding::None | StringArrayEncoding::Base64
+                )
+            })
+        })
+        .unwrap_or_default()
 }
