@@ -74,12 +74,15 @@ pub fn apply_transforms(program: &mut Program, options: &Options) {
     eval_call_expressions::transform_eval_call_expressions(program, options);
     string_array::transform_string_array(
         program,
-        options.string_array.unwrap_or(false),
-        options.string_array_threshold.unwrap_or(1.0),
-        options.string_array_indexes_type.as_deref().unwrap_or(&[]),
-        options.string_array_index_shift.unwrap_or(false),
-        options.reserved_strings.as_deref().unwrap_or(&[]),
-        options.ignore_imports.unwrap_or(false),
+        string_array::StringArrayTransformOptions {
+            enabled: options.string_array.unwrap_or(false),
+            threshold: options.string_array_threshold.unwrap_or(1.0),
+            indexes_type: options.string_array_indexes_type.as_deref().unwrap_or(&[]),
+            index_shift: options.string_array_index_shift.unwrap_or(false),
+            shuffle: options.string_array_shuffle.unwrap_or(false),
+            reserved_strings: options.reserved_strings.as_deref().unwrap_or(&[]),
+            ignore_imports: options.ignore_imports.unwrap_or(false),
+        },
     );
     escape_sequences::transform_escape_sequences(
         program,

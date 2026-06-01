@@ -1126,4 +1126,38 @@ mod tests {
             result.code
         );
     }
+
+    #[test]
+    fn obfuscate_uses_string_array_shuffle_when_enabled() {
+        let result = obfuscate(
+            "const first = 'foo'; const second = 'bar';",
+            Options {
+                compact: Some(true),
+                string_array: Some(true),
+                string_array_threshold: Some(1.0),
+                string_array_shuffle: Some(true),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                unicode_escape_sequence: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(
+            result.code.contains("const _0x0=['bar','foo'];"),
+            "{}",
+            result.code
+        );
+        assert!(
+            result.code.contains("const first=_0x0[0x1];"),
+            "{}",
+            result.code
+        );
+        assert!(
+            result.code.contains("const second=_0x0[0x0];"),
+            "{}",
+            result.code
+        );
+    }
 }

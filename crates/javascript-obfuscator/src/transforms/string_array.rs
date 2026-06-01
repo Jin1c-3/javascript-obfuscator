@@ -14,16 +14,18 @@ use crate::options::StringArrayIndexesType;
 const INDEX_SHIFT_AMOUNT: usize = 100;
 const SHIFTED_WRAPPER_NAME: &str = "_0x1";
 
-pub fn transform_string_array(
-    program: &mut Program,
-    enabled: bool,
-    threshold: f64,
-    string_array_indexes_type: &[StringArrayIndexesType],
-    index_shift_enabled: bool,
-    reserved_strings: &[String],
-    ignore_imports: bool,
-) {
-    if !enabled || threshold <= 0.0 {
+pub struct StringArrayTransformOptions<'a> {
+    pub enabled: bool,
+    pub threshold: f64,
+    pub indexes_type: &'a [StringArrayIndexesType],
+    pub index_shift: bool,
+    pub shuffle: bool,
+    pub reserved_strings: &'a [String],
+    pub ignore_imports: bool,
+}
+
+pub fn transform_string_array(program: &mut Program, options: StringArrayTransformOptions<'_>) {
+    if !options.enabled || options.threshold <= 0.0 {
         return;
     }
 
@@ -31,10 +33,10 @@ pub fn transform_string_array(
         storage_name: "_0x0",
         indexes_by_value: BTreeMap::new(),
         values: Vec::new(),
-        index_type: first_index_type(string_array_indexes_type),
-        index_shift_enabled,
-        reserved_strings,
-        ignore_imports,
+        index_type: first_index_type(options.indexes_type),
+        index_shift_enabled: options.index_shift,
+        reserved_strings: options.reserved_strings,
+        ignore_imports: options.ignore_imports,
     };
 
     program.visit_mut_with(&mut transform);
@@ -43,12 +45,22 @@ pub fn transform_string_array(
         return;
     }
 
-    insert_string_array_declarations(
-        program,
-        transform.storage_name,
-        transform.values,
-        index_shift_enabled,
-    );
+    let storage_name = transform.storage_name;
+    let index_type = transform.index_type;
+    let mut values = transform.values;
+
+    if options.shuffle {
+        let index_remap = reverse_string_array_values(&mut values);
+        remap_string_array_indexes(
+            program,
+            storage_name,
+            index_type,
+            options.index_shift,
+            &index_remap,
+        );
+    }
+
+    insert_string_array_declarations(program, storage_name, values, options.index_shift);
 }
 
 struct StringArrayTransform<'a> {
@@ -111,6 +123,96 @@ impl StringArrayTransform<'_> {
         self.indexes_by_value.insert(value, index);
         index
     }
+}
+
+struct StringArrayIndexRemapTransform<'a> {
+    storage_name: &'static str,
+    index_type: StringArrayIndexesType,
+    index_shift_enabled: bool,
+    index_remap: &'a [usize],
+}
+
+impl VisitMut for StringArrayIndexRemapTransform<'_> {
+    fn visit_mut_expr(&mut self, expression: &mut Expr) {
+        expression.visit_mut_children_with(self);
+
+        match expression {
+            Expr::Member(member_expression) => self.remap_member_expression(member_expression),
+            Expr::Call(call_expression) => self.remap_call_expression(call_expression),
+            _ => {}
+        }
+    }
+}
+
+impl StringArrayIndexRemapTransform<'_> {
+    fn remap_member_expression(&self, member_expression: &mut MemberExpr) {
+        if !is_identifier_expression(member_expression.obj.as_ref(), self.storage_name) {
+            return;
+        }
+
+        let MemberProp::Computed(property) = &mut member_expression.prop else {
+            return;
+        };
+
+        let Some(old_index) = index_from_literal(property.expr.as_ref()) else {
+            return;
+        };
+        let Some(new_index) = self.remapped_index(old_index) else {
+            return;
+        };
+
+        *property.expr = create_index_literal(new_index, self.index_type);
+    }
+
+    fn remap_call_expression(&self, call_expression: &mut CallExpr) {
+        if !self.index_shift_enabled || !is_identifier_callee(call_expression, SHIFTED_WRAPPER_NAME)
+        {
+            return;
+        }
+
+        let Some(first_argument) = call_expression.args.first_mut() else {
+            return;
+        };
+        let Some(shifted_index) = index_from_literal(first_argument.expr.as_ref()) else {
+            return;
+        };
+        let Some(old_index) = shifted_index.checked_sub(INDEX_SHIFT_AMOUNT) else {
+            return;
+        };
+        let Some(new_index) = self.remapped_index(old_index) else {
+            return;
+        };
+
+        *first_argument.expr =
+            create_index_literal(new_index + INDEX_SHIFT_AMOUNT, self.index_type);
+    }
+
+    fn remapped_index(&self, old_index: usize) -> Option<usize> {
+        self.index_remap.get(old_index).copied()
+    }
+}
+
+fn reverse_string_array_values(values: &mut [String]) -> Vec<usize> {
+    let length = values.len();
+    let index_remap = (0..length).map(|index| length - index - 1).collect();
+    values.reverse();
+
+    index_remap
+}
+
+fn remap_string_array_indexes(
+    program: &mut Program,
+    storage_name: &'static str,
+    index_type: StringArrayIndexesType,
+    index_shift_enabled: bool,
+    index_remap: &[usize],
+) {
+    program.visit_mut_with(&mut StringArrayIndexRemapTransform {
+        storage_name,
+        index_type,
+        index_shift_enabled,
+        index_remap,
+    });
 }
 
 fn insert_string_array_declarations(
@@ -327,6 +429,43 @@ fn create_index_literal(value: usize, index_type: StringArrayIndexesType) -> Exp
     }
 }
 
+fn index_from_literal(expression: &Expr) -> Option<usize> {
+    match expression {
+        Expr::Lit(Lit::Num(number)) if number.value.is_finite() && number.value >= 0.0 => {
+            Some(number.value as usize)
+        }
+        Expr::Lit(Lit::Str(string)) => parse_index_string(&string.value.to_string_lossy()),
+        _ => None,
+    }
+}
+
+fn parse_index_string(value: &str) -> Option<usize> {
+    if let Some(hexadecimal) = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+    {
+        return usize::from_str_radix(hexadecimal, 16).ok();
+    }
+
+    value.parse().ok()
+}
+
+fn is_identifier_expression(expression: &Expr, name: &str) -> bool {
+    let Expr::Ident(identifier) = expression else {
+        return false;
+    };
+
+    identifier.sym.as_ref() == name
+}
+
+fn is_identifier_callee(call_expression: &CallExpr, name: &str) -> bool {
+    let Callee::Expr(callee_expression) = &call_expression.callee else {
+        return false;
+    };
+
+    is_identifier_expression(callee_expression.as_ref(), name)
+}
+
 fn single_quote_raw(value: &str) -> String {
     let mut escaped = String::new();
 
@@ -384,12 +523,15 @@ mod tests {
         let mut parsed_program = parse_program(source_code).expect("source should parse");
         transform_string_array(
             &mut parsed_program.program,
-            enabled,
-            1.0,
-            &[],
-            false,
-            reserved_strings,
-            ignore_imports,
+            StringArrayTransformOptions {
+                enabled,
+                threshold: 1.0,
+                indexes_type: &[],
+                index_shift: false,
+                shuffle: false,
+                reserved_strings,
+                ignore_imports,
+            },
         );
         generate_code(&parsed_program.program, parsed_program.source_map, true)
             .expect("code should generate")
@@ -453,12 +595,15 @@ mod tests {
             parse_program("const value = 'test';").expect("source should parse");
         transform_string_array(
             &mut parsed_program.program,
-            true,
-            0.0,
-            &[],
-            false,
-            &[],
-            false,
+            StringArrayTransformOptions {
+                enabled: true,
+                threshold: 0.0,
+                indexes_type: &[],
+                index_shift: false,
+                shuffle: false,
+                reserved_strings: &[],
+                ignore_imports: false,
+            },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
             .expect("code should generate");
@@ -473,12 +618,15 @@ mod tests {
             parse_program("const value = 'test';").expect("source should parse");
         transform_string_array(
             &mut parsed_program.program,
-            true,
-            1.0,
-            &[StringArrayIndexesType::HexadecimalNumericString],
-            false,
-            &[],
-            false,
+            StringArrayTransformOptions {
+                enabled: true,
+                threshold: 1.0,
+                indexes_type: &[StringArrayIndexesType::HexadecimalNumericString],
+                index_shift: false,
+                shuffle: false,
+                reserved_strings: &[],
+                ignore_imports: false,
+            },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
             .expect("code should generate");
@@ -492,12 +640,15 @@ mod tests {
             .expect("source should parse");
         transform_string_array(
             &mut parsed_program.program,
-            true,
-            1.0,
-            &[],
-            true,
-            &[],
-            false,
+            StringArrayTransformOptions {
+                enabled: true,
+                threshold: 1.0,
+                indexes_type: &[],
+                index_shift: true,
+                shuffle: false,
+                reserved_strings: &[],
+                ignore_imports: false,
+            },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
             .expect("code should generate");
@@ -509,6 +660,36 @@ mod tests {
         );
         assert!(
             code.contains("const first=_0x1(0x64);const second=_0x1(0x65);"),
+            "{code}"
+        );
+    }
+
+    #[test]
+    fn remaps_shifted_indexes_when_string_array_shuffle_is_enabled() {
+        let mut parsed_program = parse_program("const first = 'foo'; const second = 'bar';")
+            .expect("source should parse");
+        transform_string_array(
+            &mut parsed_program.program,
+            StringArrayTransformOptions {
+                enabled: true,
+                threshold: 1.0,
+                indexes_type: &[],
+                index_shift: true,
+                shuffle: true,
+                reserved_strings: &[],
+                ignore_imports: false,
+            },
+        );
+        let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
+            .expect("code should generate");
+
+        assert!(code.contains("const _0x0=['bar','foo'];"), "{code}");
+        assert!(
+            code.contains("function _0x1(index){return _0x0[index-0x64];}"),
+            "{code}"
+        );
+        assert!(
+            code.contains("const first=_0x1(0x65);const second=_0x1(0x64);"),
             "{code}"
         );
     }
