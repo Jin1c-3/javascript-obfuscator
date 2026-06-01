@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
 
 use regex::Regex;
 use swc_common::DUMMY_SP;
@@ -11,7 +12,9 @@ use swc_ecma_visit::{VisitMut, VisitMutWith};
 use crate::generators::{IdentifierNamesGenerator, IdentifierNamesGeneratorKind};
 
 const UNSAFE_MODE: &str = "unsafe";
-const RESERVED_DOM_PROPERTY_NAMES: &[&str] = &["constructor", "log"];
+const RESERVED_DOM_PROPERTY_NAMES_JSON: &str =
+    include_str!("../../assets/ReservedDomProperties.json");
+static RESERVED_DOM_PROPERTY_NAMES: OnceLock<HashSet<String>> = OnceLock::new();
 
 pub fn transform_rename_properties(
     program: &mut Program,
@@ -123,7 +126,7 @@ impl RenamePropertiesTransform {
     }
 
     fn should_keep_name(&self, name: &str) -> bool {
-        RESERVED_DOM_PROPERTY_NAMES.contains(&name)
+        reserved_dom_property_names().contains(name)
             || self
                 .reserved_name_patterns
                 .iter()
@@ -151,6 +154,15 @@ impl RenamePropertiesTransform {
             value: Box::new(value),
         })
     }
+}
+
+fn reserved_dom_property_names() -> &'static HashSet<String> {
+    RESERVED_DOM_PROPERTY_NAMES.get_or_init(|| {
+        serde_json::from_str::<Vec<String>>(RESERVED_DOM_PROPERTY_NAMES_JSON)
+            .expect("reserved DOM property names JSON should parse")
+            .into_iter()
+            .collect()
+    })
 }
 
 fn compile_patterns(patterns: &[String]) -> Vec<Regex> {
@@ -223,6 +235,19 @@ mod tests {
         assert!(code.contains("'keep':1"), "{code}");
         assert!(code.contains("'_0x0':2"), "{code}");
         assert!(code.contains("value.keep;"), "{code}");
+        assert!(code.contains("value._0x0;"), "{code}");
+    }
+
+    #[test]
+    fn keeps_reserved_dom_properties() {
+        let code = transform(
+            "const value = {'then': 1, 'custom': 2}; value.then; value.custom;",
+            &[],
+        );
+
+        assert!(code.contains("'then':1"), "{code}");
+        assert!(code.contains("'_0x0':2"), "{code}");
+        assert!(code.contains("value.then;"), "{code}");
         assert!(code.contains("value._0x0;"), "{code}");
     }
 

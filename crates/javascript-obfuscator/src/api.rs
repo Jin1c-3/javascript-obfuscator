@@ -859,6 +859,39 @@ mod tests {
     }
 
     #[test]
+    fn obfuscate_keeps_reserved_dom_properties_when_renaming_properties() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "identifierNamesGenerator": "hexadecimal",
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "renameProperties": true,
+            "renamePropertiesMode": "unsafe",
+            "stringArray": false
+        }))
+        .expect("rename properties options should deserialize");
+        let result = obfuscate(
+            "const object = {then: 1, custom: 2}; console.log(object.then, object.custom);",
+            options,
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("'then':0x1"), "{}", result.code);
+        assert!(result.code.contains("'_0x0':0x2"), "{}", result.code);
+        assert!(result.code.contains("object.then"), "{}", result.code);
+        assert!(result.code.contains("object._0x0"), "{}", result.code);
+
+        let output = run_node_source(&result.code);
+
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "1 2\n");
+    }
+
+    #[test]
     fn obfuscate_renames_top_level_destructuring_properties_in_unsafe_mode() {
         let options: Options = serde_json::from_value(json!({
             "compact": true,
