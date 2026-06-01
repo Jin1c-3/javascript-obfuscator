@@ -397,14 +397,10 @@ fn first_index_type(index_types: &[StringArrayIndexesType]) -> StringArrayIndexe
 }
 
 fn should_emit_string_array_wrapper(
-    index_shift_enabled: bool,
-    encoding: StringArrayEncoding,
+    _index_shift_enabled: bool,
+    _encoding: StringArrayEncoding,
 ) -> bool {
-    index_shift_enabled
-        || matches!(
-            encoding,
-            StringArrayEncoding::Base64 | StringArrayEncoding::Rc4
-        )
+    true
 }
 
 fn encode_string_array_value(value: &str, encoding: StringArrayEncoding) -> StringArrayValue {
@@ -596,9 +592,12 @@ fn create_string_array_wrapper_statement(
     encoding: StringArrayEncoding,
 ) -> Stmt {
     match encoding {
-        StringArrayEncoding::None => {
-            create_index_shift_wrapper_statement(storage_name, wrapper_name, shift_amount)
-        }
+        StringArrayEncoding::None => create_index_shift_wrapper_statement(
+            storage_name,
+            wrapper_name,
+            shift_amount,
+            index_shift_enabled,
+        ),
         StringArrayEncoding::Base64 => create_base64_wrapper_statement(
             storage_name,
             wrapper_name,
@@ -684,7 +683,17 @@ fn create_index_shift_wrapper_statement(
     storage_name: &str,
     wrapper_name: &str,
     shift_amount: usize,
+    index_shift_enabled: bool,
 ) -> Stmt {
+    let index_expression = if index_shift_enabled {
+        create_sub_expression(
+            Expr::Ident(create_identifier("index")),
+            create_number_literal(shift_amount),
+        )
+    } else {
+        Expr::Ident(create_identifier("index"))
+    };
+
     Stmt::Decl(Decl::Fn(FnDecl {
         ident: create_identifier(wrapper_name),
         declare: false,
@@ -706,10 +715,7 @@ fn create_index_shift_wrapper_statement(
                 stmts: vec![create_return_statement(
                     create_string_array_member_expression_with_property(
                         storage_name,
-                        create_sub_expression(
-                            Expr::Ident(create_identifier("index")),
-                            create_number_literal(shift_amount),
-                        ),
+                        index_expression,
                     ),
                 )],
             }),
@@ -881,9 +887,14 @@ mod tests {
 
         assert!(code.contains("const _0x0=['test'];"), "{code}");
         assert!(
-            code.contains("const value=_0x0[0x0];console.log(_0x0[0x0]);"),
+            code.contains("function _0x1(index){return _0x0[index];}"),
             "{code}"
         );
+        assert!(
+            code.contains("const value=_0x1(0x0);console.log(_0x1(0x0));"),
+            "{code}"
+        );
+        assert!(!code.contains("const value=_0x0[0x0];"), "{code}");
     }
 
     #[test]
@@ -912,7 +923,7 @@ mod tests {
 
         assert!(code.contains("const _0x0=['take'];"), "{code}");
         assert!(code.contains("const keep='keep';"), "{code}");
-        assert!(code.contains("const take=_0x0[0x0];"), "{code}");
+        assert!(code.contains("const take=_0x1(0x0);"), "{code}");
     }
 
     #[test]
@@ -926,7 +937,7 @@ mod tests {
 
         assert!(code.contains("const _0x0=['./bar'];"), "{code}");
         assert!(code.contains("require('./foo')"), "{code}");
-        assert!(code.contains("const bar=_0x0[0x0];"), "{code}");
+        assert!(code.contains("const bar=_0x1(0x0);"), "{code}");
     }
 
     #[test]
@@ -980,7 +991,7 @@ mod tests {
 
         assert!(code.contains("const _0x0=['bar'];"), "{code}");
         assert!(code.contains("const foo='foo';"), "{code}");
-        assert!(code.contains("const bar=_0x0[0x0];"), "{code}");
+        assert!(code.contains("const bar=_0x1(0x0);"), "{code}");
     }
 
     #[test]
@@ -1009,7 +1020,37 @@ mod tests {
 
         assert!(code.contains("const _0x0=['bar'];"), "{code}");
         assert!(code.contains("const foo='foo';"), "{code}");
-        assert!(code.contains("const bar=_0x0[0x0];"), "{code}");
+        assert!(code.contains("const bar=_0x1(0x0);"), "{code}");
+    }
+
+    #[test]
+    fn uses_string_array_root_wrapper_without_index_shift() {
+        let mut parsed_program =
+            parse_program("const value = 'test';").expect("source should parse");
+        transform_string_array(
+            &mut parsed_program.program,
+            StringArrayTransformOptions {
+                enabled: true,
+                threshold: 1.0,
+                indexes_type: &[],
+                encoding: StringArrayEncoding::None,
+                index_shift: false,
+                shuffle: false,
+                rotate: false,
+                reserved_strings: &[],
+                force_transform_strings: &[],
+                ignore_imports: false,
+            },
+        );
+        let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
+            .expect("code should generate");
+
+        assert!(
+            code.contains("function _0x1(index){return _0x0[index];}"),
+            "{code}"
+        );
+        assert!(code.contains("const value=_0x1(0x0);"), "{code}");
+        assert!(!code.contains("const value=_0x0[0x0];"), "{code}");
     }
 
     #[test]
@@ -1034,7 +1075,7 @@ mod tests {
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
             .expect("code should generate");
 
-        assert!(code.contains("const value=_0x0['0x0'];"), "{code}");
+        assert!(code.contains("const value=_0x1('0x0');"), "{code}");
     }
 
     #[test]

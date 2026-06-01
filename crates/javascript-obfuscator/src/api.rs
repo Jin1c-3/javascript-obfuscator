@@ -1378,7 +1378,19 @@ mod tests {
         assert!(
             result
                 .code
-                .contains("const value=_0x0[0x0];console.log(_0x0[0x0]);"),
+                .contains("function _0x1(index){return _0x0[index];}"),
+            "{}",
+            result.code
+        );
+        assert!(
+            result
+                .code
+                .contains("const value=_0x1(0x0);console.log(_0x1(0x0));"),
+            "{}",
+            result.code
+        );
+        assert!(
+            !result.code.contains("const value=_0x0[0x0];"),
             "{}",
             result.code
         );
@@ -1455,7 +1467,7 @@ mod tests {
         );
         assert!(result.code.contains("const foo='foo';"), "{}", result.code);
         assert!(
-            result.code.contains("const bar=_0x0[0x0];"),
+            result.code.contains("const bar=_0x1(0x0);"),
             "{}",
             result.code
         );
@@ -1481,7 +1493,7 @@ mod tests {
         .expect("obfuscation should succeed");
 
         assert!(
-            result.code.contains("const value=_0x0[0x0];"),
+            result.code.contains("const value=_0x1(0x0);"),
             "{}",
             result.code
         );
@@ -1507,7 +1519,7 @@ mod tests {
         .expect("obfuscation should succeed");
 
         assert!(
-            result.code.contains("const value=_0x0['0x0'];"),
+            result.code.contains("const value=_0x1('0x0');"),
             "{}",
             result.code
         );
@@ -1572,12 +1584,12 @@ mod tests {
             result.code
         );
         assert!(
-            result.code.contains("const first=_0x0[0x1];"),
+            result.code.contains("const first=_0x1(0x1);"),
             "{}",
             result.code
         );
         assert!(
-            result.code.contains("const second=_0x0[0x0];"),
+            result.code.contains("const second=_0x1(0x0);"),
             "{}",
             result.code
         );
@@ -1606,17 +1618,17 @@ mod tests {
             result.code
         );
         assert!(
-            result.code.contains("const first=_0x0[0x1];"),
+            result.code.contains("const first=_0x1(0x1);"),
             "{}",
             result.code
         );
         assert!(
-            result.code.contains("const second=_0x0[0x2];"),
+            result.code.contains("const second=_0x1(0x2);"),
             "{}",
             result.code
         );
         assert!(
-            result.code.contains("const third=_0x0[0x0];"),
+            result.code.contains("const third=_0x1(0x0);"),
             "{}",
             result.code
         );
@@ -1726,6 +1738,33 @@ mod tests {
             "{}",
             result.code
         );
+    }
+
+    #[test]
+    fn obfuscate_none_string_array_root_wrapper_decodes_at_runtime() {
+        let result = obfuscate(
+            "console.log(['foo', 'bar'].join('|'));",
+            Options {
+                compact: Some(true),
+                string_array: Some(true),
+                string_array_threshold: Some(1.0),
+                string_array_index_shift: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                unicode_escape_sequence: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        let output = run_node_source(&result.code);
+
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "foo|bar\n");
     }
 
     #[test]
