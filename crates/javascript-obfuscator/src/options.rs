@@ -65,6 +65,10 @@ pub struct Options {
     #[serde(default)]
     pub unicode_escape_sequence: Option<bool>,
     #[serde(default)]
+    pub debug_protection: Option<bool>,
+    #[serde(default, deserialize_with = "deserialize_optional_usize_floor")]
+    pub debug_protection_interval: Option<usize>,
+    #[serde(default)]
     pub disable_console_output: Option<bool>,
     #[serde(default)]
     pub domain_lock: Option<Vec<String>>,
@@ -329,5 +333,20 @@ mod tests {
             serialized_options["domainLockRedirectUrl"],
             json!("https://blocked.example/path")
         );
+    }
+
+    #[test]
+    fn deserializes_debug_protection_options_for_option_compatibility() {
+        let options: Options = serde_json::from_value(json!({
+            "debugProtection": true,
+            "debugProtectionInterval": 4000.9
+        }))
+        .expect("debug protection options should deserialize");
+        let serialized_options = serde_json::to_value(&options).expect("options should serialize");
+
+        assert_eq!(options.debug_protection, Some(true));
+        assert_eq!(options.debug_protection_interval, Some(4000));
+        assert_eq!(serialized_options["debugProtection"], json!(true));
+        assert_eq!(serialized_options["debugProtectionInterval"], json!(4000));
     }
 }

@@ -521,6 +521,81 @@ mod tests {
     }
 
     #[test]
+    fn obfuscate_debug_protection_runs_user_code_at_runtime() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "debugProtection": true,
+            "debugProtectionInterval": 0,
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "stringArray": false,
+            "unicodeEscapeSequence": false
+        }))
+        .expect("debug protection options should deserialize");
+        let result =
+            obfuscate("globalThis.result = 'ran';", options).expect("obfuscation should succeed");
+
+        assert!(result.code.contains("debugger"), "{}", result.code);
+        assert!(!result.code.contains("setInterval"), "{}", result.code);
+
+        let output = run_node_source(&format!(
+            "const vm=require('node:vm');const sandbox={{result:null}};vm.runInNewContext({},sandbox);console.log(sandbox.result);",
+            serde_json::to_string(&result.code).expect("generated code should serialize")
+        ));
+
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "ran\n");
+        assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    }
+
+    #[test]
+    fn obfuscate_debug_protection_interval_adds_interval_helper() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "debugProtection": true,
+            "debugProtectionInterval": 250,
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "stringArray": false,
+            "unicodeEscapeSequence": false
+        }))
+        .expect("debug protection options should deserialize");
+        let result =
+            obfuscate("globalThis.result = 'ran';", options).expect("obfuscation should succeed");
+
+        assert!(result.code.contains("debugger"), "{}", result.code);
+        assert!(result.code.contains("setInterval"), "{}", result.code);
+        assert!(
+            result.code.contains("0xfa") || result.code.contains(",250"),
+            "{}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn obfuscate_debug_protection_false_does_not_insert_helper() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "debugProtection": false,
+            "debugProtectionInterval": 250,
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "stringArray": false,
+            "unicodeEscapeSequence": false
+        }))
+        .expect("debug protection options should deserialize");
+        let result =
+            obfuscate("globalThis.result = 'ran';", options).expect("obfuscation should succeed");
+
+        assert!(!result.code.contains("debugger"), "{}", result.code);
+        assert!(!result.code.contains("setInterval"), "{}", result.code);
+    }
+
+    #[test]
     fn obfuscate_multiple_preserves_keys() {
         let mut input = BTreeMap::new();
         input.insert("first.js".to_string(), "const first = 1;".to_string());

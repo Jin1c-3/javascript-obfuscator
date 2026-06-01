@@ -2,6 +2,7 @@ pub mod block_statement_simplify;
 pub mod boolean_literals;
 pub mod class_fields;
 pub mod console_output;
+pub mod debug_protection;
 pub mod directive_placement;
 pub mod domain_lock;
 pub mod escape_sequences;
@@ -35,6 +36,11 @@ pub fn apply_transforms(
     console_output::transform_console_output(
         program,
         options.disable_console_output.unwrap_or(false),
+    );
+    debug_protection::transform_debug_protection(
+        program,
+        options.debug_protection.unwrap_or(false),
+        options.debug_protection_interval.unwrap_or(0),
     );
     domain_lock::transform_domain_lock(
         program,
