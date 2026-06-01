@@ -2,19 +2,24 @@ use std::collections::BTreeMap;
 
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::{
-    ArrayLit, BindingIdent, CallExpr, Callee, ComputedPropName, Decl, Expr, ExprOrSpread, Ident,
-    Lit, MemberExpr, MemberProp, ModuleDecl, ModuleItem, Number, Pat, Program, Str, VarDecl,
-    VarDeclKind, VarDeclarator,
+    ArrayLit, BinExpr, BinaryOp, BindingIdent, BlockStmt, CallExpr, Callee, ComputedPropName, Decl,
+    Expr, ExprOrSpread, FnDecl, Function, Ident, Lit, MemberExpr, MemberProp, ModuleDecl,
+    ModuleItem, Number, Param, Pat, Program, ReturnStmt, Stmt, Str, VarDecl, VarDeclKind,
+    VarDeclarator,
 };
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 use crate::options::StringArrayIndexesType;
+
+const INDEX_SHIFT_AMOUNT: usize = 100;
+const SHIFTED_WRAPPER_NAME: &str = "_0x1";
 
 pub fn transform_string_array(
     program: &mut Program,
     enabled: bool,
     threshold: f64,
     string_array_indexes_type: &[StringArrayIndexesType],
+    index_shift_enabled: bool,
     reserved_strings: &[String],
     ignore_imports: bool,
 ) {
@@ -27,6 +32,7 @@ pub fn transform_string_array(
         indexes_by_value: BTreeMap::new(),
         values: Vec::new(),
         index_type: first_index_type(string_array_indexes_type),
+        index_shift_enabled,
         reserved_strings,
         ignore_imports,
     };
@@ -37,7 +43,12 @@ pub fn transform_string_array(
         return;
     }
 
-    insert_storage_declaration(program, transform.storage_name, transform.values);
+    insert_string_array_declarations(
+        program,
+        transform.storage_name,
+        transform.values,
+        index_shift_enabled,
+    );
 }
 
 struct StringArrayTransform<'a> {
@@ -45,6 +56,7 @@ struct StringArrayTransform<'a> {
     indexes_by_value: BTreeMap<String, usize>,
     values: Vec<String>,
     index_type: StringArrayIndexesType,
+    index_shift_enabled: bool,
     reserved_strings: &'a [String],
     ignore_imports: bool,
 }
@@ -79,8 +91,12 @@ impl VisitMut for StringArrayTransform<'_> {
         }
 
         let index = self.get_or_insert_value(value);
-        *expression =
-            create_string_array_member_expression(self.storage_name, index, self.index_type);
+        *expression = create_string_array_reference_expression(
+            self.storage_name,
+            index,
+            self.index_type,
+            self.index_shift_enabled,
+        );
     }
 }
 
@@ -97,11 +113,26 @@ impl StringArrayTransform<'_> {
     }
 }
 
-fn insert_storage_declaration(program: &mut Program, storage_name: &str, values: Vec<String>) {
-    let storage_statement = create_storage_statement(storage_name, values);
+fn insert_string_array_declarations(
+    program: &mut Program,
+    storage_name: &str,
+    values: Vec<String>,
+    index_shift_enabled: bool,
+) {
+    let mut statements = vec![create_storage_statement(storage_name, values)];
+
+    if index_shift_enabled {
+        statements.push(create_index_shift_wrapper_statement(
+            storage_name,
+            SHIFTED_WRAPPER_NAME,
+            INDEX_SHIFT_AMOUNT,
+        ));
+    }
 
     match program {
-        Program::Script(script) => script.body.insert(0, storage_statement),
+        Program::Script(script) => {
+            script.body.splice(0..0, statements);
+        }
         Program::Module(module) => {
             let insert_index = module
                 .body
@@ -109,9 +140,10 @@ fn insert_storage_declaration(program: &mut Program, storage_name: &str, values:
                 .position(|item| !matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))))
                 .unwrap_or(module.body.len());
 
-            module
-                .body
-                .insert(insert_index, ModuleItem::Stmt(storage_statement));
+            module.body.splice(
+                insert_index..insert_index,
+                statements.into_iter().map(ModuleItem::Stmt),
+            );
         }
     }
 }
@@ -147,17 +179,57 @@ fn first_index_type(index_types: &[StringArrayIndexesType]) -> StringArrayIndexe
         .unwrap_or(StringArrayIndexesType::HexadecimalNumber)
 }
 
+fn create_string_array_reference_expression(
+    storage_name: &str,
+    index: usize,
+    index_type: StringArrayIndexesType,
+    index_shift_enabled: bool,
+) -> Expr {
+    if index_shift_enabled {
+        return create_string_array_call_expression(
+            SHIFTED_WRAPPER_NAME,
+            index + INDEX_SHIFT_AMOUNT,
+            index_type,
+        );
+    }
+
+    create_string_array_member_expression(storage_name, index, index_type)
+}
+
+fn create_string_array_call_expression(
+    wrapper_name: &str,
+    index: usize,
+    index_type: StringArrayIndexesType,
+) -> Expr {
+    Expr::Call(CallExpr {
+        span: DUMMY_SP,
+        ctxt: Default::default(),
+        callee: Callee::Expr(Box::new(Expr::Ident(create_identifier(wrapper_name)))),
+        args: vec![create_expr_or_spread(create_index_literal(
+            index, index_type,
+        ))],
+        type_args: None,
+    })
+}
+
 fn create_string_array_member_expression(
     storage_name: &str,
     index: usize,
     index_type: StringArrayIndexesType,
 ) -> Expr {
+    create_string_array_member_expression_with_property(
+        storage_name,
+        create_index_literal(index, index_type),
+    )
+}
+
+fn create_string_array_member_expression_with_property(storage_name: &str, property: Expr) -> Expr {
     Expr::Member(MemberExpr {
         span: DUMMY_SP,
         obj: Box::new(Expr::Ident(create_identifier(storage_name))),
         prop: MemberProp::Computed(ComputedPropName {
             span: DUMMY_SP,
-            expr: Box::new(create_index_literal(index, index_type)),
+            expr: Box::new(property),
         }),
     })
 }
@@ -187,6 +259,63 @@ fn create_number_literal(value: usize) -> Expr {
         value: value as f64,
         raw: Some(format!("0x{value:x}").into()),
     }))
+}
+
+fn create_index_shift_wrapper_statement(
+    storage_name: &str,
+    wrapper_name: &str,
+    shift_amount: usize,
+) -> Stmt {
+    Stmt::Decl(Decl::Fn(FnDecl {
+        ident: create_identifier(wrapper_name),
+        declare: false,
+        function: Box::new(Function {
+            params: vec![Param {
+                span: DUMMY_SP,
+                decorators: Vec::new(),
+                pat: Pat::Ident(BindingIdent {
+                    id: create_identifier("index"),
+                    type_ann: None,
+                }),
+            }],
+            decorators: Vec::new(),
+            span: DUMMY_SP,
+            ctxt: Default::default(),
+            body: Some(BlockStmt {
+                span: DUMMY_SP,
+                ctxt: Default::default(),
+                stmts: vec![create_return_statement(
+                    create_string_array_member_expression_with_property(
+                        storage_name,
+                        create_sub_expression(
+                            Expr::Ident(create_identifier("index")),
+                            create_number_literal(shift_amount),
+                        ),
+                    ),
+                )],
+            }),
+            is_generator: false,
+            is_async: false,
+            type_params: None,
+            return_type: None,
+        }),
+    }))
+}
+
+fn create_sub_expression(left: Expr, right: Expr) -> Expr {
+    Expr::Bin(BinExpr {
+        span: DUMMY_SP,
+        op: BinaryOp::Sub,
+        left: Box::new(left),
+        right: Box::new(right),
+    })
+}
+
+fn create_return_statement(argument: Expr) -> Stmt {
+    Stmt::Return(ReturnStmt {
+        span: DUMMY_SP,
+        arg: Some(Box::new(argument)),
+    })
 }
 
 fn create_index_literal(value: usize, index_type: StringArrayIndexesType) -> Expr {
@@ -258,6 +387,7 @@ mod tests {
             enabled,
             1.0,
             &[],
+            false,
             reserved_strings,
             ignore_imports,
         );
@@ -321,7 +451,15 @@ mod tests {
     fn keeps_string_literals_when_threshold_is_zero() {
         let mut parsed_program =
             parse_program("const value = 'test';").expect("source should parse");
-        transform_string_array(&mut parsed_program.program, true, 0.0, &[], &[], false);
+        transform_string_array(
+            &mut parsed_program.program,
+            true,
+            0.0,
+            &[],
+            false,
+            &[],
+            false,
+        );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
             .expect("code should generate");
 
@@ -338,6 +476,7 @@ mod tests {
             true,
             1.0,
             &[StringArrayIndexesType::HexadecimalNumericString],
+            false,
             &[],
             false,
         );
@@ -345,5 +484,32 @@ mod tests {
             .expect("code should generate");
 
         assert!(code.contains("const value=_0x0['0x0'];"), "{code}");
+    }
+
+    #[test]
+    fn uses_shifted_wrapper_when_index_shift_enabled() {
+        let mut parsed_program = parse_program("const first = 'foo'; const second = 'bar';")
+            .expect("source should parse");
+        transform_string_array(
+            &mut parsed_program.program,
+            true,
+            1.0,
+            &[],
+            true,
+            &[],
+            false,
+        );
+        let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
+            .expect("code should generate");
+
+        assert!(code.contains("const _0x0=['foo','bar'];"), "{code}");
+        assert!(
+            code.contains("function _0x1(index){return _0x0[index-0x64];}"),
+            "{code}"
+        );
+        assert!(
+            code.contains("const first=_0x1(0x64);const second=_0x1(0x65);"),
+            "{code}"
+        );
     }
 }

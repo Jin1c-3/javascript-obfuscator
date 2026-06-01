@@ -21,6 +21,8 @@ pub struct Options {
     #[serde(default)]
     pub string_array_indexes_type: Option<Vec<StringArrayIndexesType>>,
     #[serde(default)]
+    pub string_array_index_shift: Option<bool>,
+    #[serde(default)]
     pub ignore_imports: Option<bool>,
     #[serde(default)]
     pub rename_globals: Option<bool>,

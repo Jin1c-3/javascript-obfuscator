@@ -1090,4 +1090,40 @@ mod tests {
             result.code
         );
     }
+
+    #[test]
+    fn obfuscate_uses_string_array_index_shift_when_enabled() {
+        let result = obfuscate(
+            "const first = 'foo'; const second = 'bar';",
+            Options {
+                compact: Some(true),
+                string_array: Some(true),
+                string_array_threshold: Some(1.0),
+                string_array_index_shift: Some(true),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                unicode_escape_sequence: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(
+            result
+                .code
+                .contains("function _0x1(index){return _0x0[index-0x64];}"),
+            "{}",
+            result.code
+        );
+        assert!(
+            result.code.contains("const first=_0x1(0x64);"),
+            "{}",
+            result.code
+        );
+        assert!(
+            result.code.contains("const second=_0x1(0x65);"),
+            "{}",
+            result.code
+        );
+    }
 }
