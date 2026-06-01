@@ -1038,4 +1038,56 @@ mod tests {
         );
         assert!(!result.code.contains("const _0x0=["), "{}", result.code);
     }
+
+    #[test]
+    fn obfuscate_uses_hexadecimal_number_string_array_index_type() {
+        let result = obfuscate(
+            "const value = 'test';",
+            Options {
+                compact: Some(true),
+                string_array: Some(true),
+                string_array_threshold: Some(1.0),
+                string_array_indexes_type: Some(vec![
+                    crate::options::StringArrayIndexesType::HexadecimalNumber,
+                ]),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                unicode_escape_sequence: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(
+            result.code.contains("const value=_0x0[0x0];"),
+            "{}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn obfuscate_uses_hexadecimal_numeric_string_array_index_type() {
+        let result = obfuscate(
+            "const value = 'test';",
+            Options {
+                compact: Some(true),
+                string_array: Some(true),
+                string_array_threshold: Some(1.0),
+                string_array_indexes_type: Some(vec![
+                    crate::options::StringArrayIndexesType::HexadecimalNumericString,
+                ]),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                unicode_escape_sequence: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(
+            result.code.contains("const value=_0x0['0x0'];"),
+            "{}",
+            result.code
+        );
+    }
 }

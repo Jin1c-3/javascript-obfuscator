@@ -19,6 +19,8 @@ pub struct Options {
     #[serde(default)]
     pub string_array_threshold: Option<f64>,
     #[serde(default)]
+    pub string_array_indexes_type: Option<Vec<StringArrayIndexesType>>,
+    #[serde(default)]
     pub ignore_imports: Option<bool>,
     #[serde(default)]
     pub rename_globals: Option<bool>,
@@ -60,6 +62,13 @@ pub enum Preset {
     LowObfuscation,
     MediumObfuscation,
     HighObfuscation,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum StringArrayIndexesType {
+    HexadecimalNumber,
+    HexadecimalNumericString,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

@@ -76,6 +76,7 @@ pub fn apply_transforms(program: &mut Program, options: &Options) {
         program,
         options.string_array.unwrap_or(false),
         options.string_array_threshold.unwrap_or(1.0),
+        options.string_array_indexes_type.as_deref().unwrap_or(&[]),
         options.reserved_strings.as_deref().unwrap_or(&[]),
         options.ignore_imports.unwrap_or(false),
     );

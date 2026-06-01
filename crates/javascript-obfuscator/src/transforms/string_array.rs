@@ -8,10 +8,13 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
+use crate::options::StringArrayIndexesType;
+
 pub fn transform_string_array(
     program: &mut Program,
     enabled: bool,
     threshold: f64,
+    string_array_indexes_type: &[StringArrayIndexesType],
     reserved_strings: &[String],
     ignore_imports: bool,
 ) {
@@ -23,6 +26,7 @@ pub fn transform_string_array(
         storage_name: "_0x0",
         indexes_by_value: BTreeMap::new(),
         values: Vec::new(),
+        index_type: first_index_type(string_array_indexes_type),
         reserved_strings,
         ignore_imports,
     };
@@ -40,6 +44,7 @@ struct StringArrayTransform<'a> {
     storage_name: &'static str,
     indexes_by_value: BTreeMap<String, usize>,
     values: Vec<String>,
+    index_type: StringArrayIndexesType,
     reserved_strings: &'a [String],
     ignore_imports: bool,
 }
@@ -74,7 +79,8 @@ impl VisitMut for StringArrayTransform<'_> {
         }
 
         let index = self.get_or_insert_value(value);
-        *expression = create_string_array_member_expression(self.storage_name, index);
+        *expression =
+            create_string_array_member_expression(self.storage_name, index, self.index_type);
     }
 }
 
@@ -134,13 +140,24 @@ fn create_storage_statement(storage_name: &str, values: Vec<String>) -> swc_ecma
     })))
 }
 
-fn create_string_array_member_expression(storage_name: &str, index: usize) -> Expr {
+fn first_index_type(index_types: &[StringArrayIndexesType]) -> StringArrayIndexesType {
+    index_types
+        .first()
+        .copied()
+        .unwrap_or(StringArrayIndexesType::HexadecimalNumber)
+}
+
+fn create_string_array_member_expression(
+    storage_name: &str,
+    index: usize,
+    index_type: StringArrayIndexesType,
+) -> Expr {
     Expr::Member(MemberExpr {
         span: DUMMY_SP,
         obj: Box::new(Expr::Ident(create_identifier(storage_name))),
         prop: MemberProp::Computed(ComputedPropName {
             span: DUMMY_SP,
-            expr: Box::new(create_number_literal(index)),
+            expr: Box::new(create_index_literal(index, index_type)),
         }),
     })
 }
@@ -170,6 +187,15 @@ fn create_number_literal(value: usize) -> Expr {
         value: value as f64,
         raw: Some(format!("0x{value:x}").into()),
     }))
+}
+
+fn create_index_literal(value: usize, index_type: StringArrayIndexesType) -> Expr {
+    match index_type {
+        StringArrayIndexesType::HexadecimalNumber => create_number_literal(value),
+        StringArrayIndexesType::HexadecimalNumericString => {
+            create_string_literal(&format!("0x{value:x}"))
+        }
+    }
 }
 
 fn single_quote_raw(value: &str) -> String {
@@ -231,6 +257,7 @@ mod tests {
             &mut parsed_program.program,
             enabled,
             1.0,
+            &[],
             reserved_strings,
             ignore_imports,
         );
@@ -294,11 +321,29 @@ mod tests {
     fn keeps_string_literals_when_threshold_is_zero() {
         let mut parsed_program =
             parse_program("const value = 'test';").expect("source should parse");
-        transform_string_array(&mut parsed_program.program, true, 0.0, &[], false);
+        transform_string_array(&mut parsed_program.program, true, 0.0, &[], &[], false);
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
             .expect("code should generate");
 
         assert!(code.contains("const value='test';"), "{code}");
         assert!(!code.contains("const _0x0=["), "{code}");
+    }
+
+    #[test]
+    fn uses_hexadecimal_numeric_string_index_type() {
+        let mut parsed_program =
+            parse_program("const value = 'test';").expect("source should parse");
+        transform_string_array(
+            &mut parsed_program.program,
+            true,
+            1.0,
+            &[StringArrayIndexesType::HexadecimalNumericString],
+            &[],
+            false,
+        );
+        let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
+            .expect("code should generate");
+
+        assert!(code.contains("const value=_0x0['0x0'];"), "{code}");
     }
 }
