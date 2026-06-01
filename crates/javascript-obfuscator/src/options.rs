@@ -25,6 +25,8 @@ pub struct Options {
     #[serde(default)]
     pub string_array_indexes_type: Option<Vec<StringArrayIndexesType>>,
     #[serde(default)]
+    pub transform_object_keys: Option<bool>,
+    #[serde(default)]
     pub string_array_index_shift: Option<bool>,
     #[serde(default)]
     pub string_array_shuffle: Option<bool>,

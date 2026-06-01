@@ -12,6 +12,7 @@ pub mod labeled_statements;
 pub mod member_expressions;
 pub mod number_literals;
 pub mod number_to_expressions;
+pub mod object_expression_keys;
 pub mod object_expressions;
 pub mod object_pattern_properties;
 pub mod split_strings;
@@ -45,6 +46,13 @@ pub fn apply_transforms(program: &mut Program, options: &Options) {
         options.rename_globals.unwrap_or(false),
     );
     object_expressions::transform_object_expressions(program);
+    object_expression_keys::transform_object_expression_keys(
+        program,
+        options.transform_object_keys.unwrap_or(false),
+        options.identifier_names_generator.unwrap_or_default(),
+        options.identifiers_prefix.as_deref().unwrap_or(""),
+        options.identifiers_dictionary.as_deref().unwrap_or(&[]),
+    );
     split_strings::transform_split_strings(
         program,
         options.split_strings.unwrap_or(false),
