@@ -59,6 +59,7 @@ pub fn apply_transforms(program: &mut Program, options: &Options) {
         options.identifier_names_generator.unwrap_or_default(),
         options.identifiers_prefix.as_deref().unwrap_or(""),
         options.identifiers_dictionary.as_deref().unwrap_or(&[]),
+        options.reserved_names.as_deref().unwrap_or(&[]),
     );
     expression_statements_merge::transform_expression_statements_merge(
         program,

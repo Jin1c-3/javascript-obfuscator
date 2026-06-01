@@ -928,6 +928,22 @@ mod tests {
     }
 
     #[test]
+    fn obfuscate_keeps_reserved_labeled_statement_name() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "reservedNames": ["label"],
+            "stringArray": false
+        }))
+        .expect("reserved names options should deserialize");
+        let result = obfuscate("label: for (;;) { break label; }", options)
+            .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("label:for(;;){break label;}"));
+    }
+
+    #[test]
     fn obfuscate_transforms_number_to_expression_when_enabled() {
         let result = obfuscate(
             "const value = 10;",

@@ -8,6 +8,7 @@ pub fn transform_labeled_statements(
     identifier_names_generator: IdentifierNamesGeneratorKind,
     identifiers_prefix: &str,
     identifiers_dictionary: &[String],
+    reserved_names: &[String],
 ) {
     if identifier_names_generator == IdentifierNamesGeneratorKind::KeepOriginal {
         return;
@@ -19,16 +20,22 @@ pub fn transform_labeled_statements(
             identifiers_prefix,
             identifiers_dictionary.to_vec(),
         ),
+        reserved_names,
     });
 }
 
-struct LabeledStatementTransform {
+struct LabeledStatementTransform<'a> {
     generator: IdentifierNamesGenerator,
+    reserved_names: &'a [String],
 }
 
-impl VisitMut for LabeledStatementTransform {
+impl VisitMut for LabeledStatementTransform<'_> {
     fn visit_mut_labeled_stmt(&mut self, labeled_statement: &mut LabeledStmt) {
         let original_label_name = labeled_statement.label.sym.to_string();
+        if is_reserved_name(&original_label_name, self.reserved_names) {
+            return;
+        }
+
         let next_label_name = self.generator.generate_next();
 
         labeled_statement.label.sym = next_label_name.clone().into();
@@ -40,6 +47,12 @@ impl VisitMut for LabeledStatementTransform {
             });
         labeled_statement.body.visit_mut_with(self);
     }
+}
+
+fn is_reserved_name(name: &str, reserved_names: &[String]) -> bool {
+    reserved_names
+        .iter()
+        .any(|reserved_name| reserved_name == name)
 }
 
 struct LabelReferenceTransform {
@@ -91,6 +104,7 @@ mod tests {
         source_code: &str,
         identifier_names_generator: IdentifierNamesGeneratorKind,
         identifiers_dictionary: &[String],
+        reserved_names: &[String],
     ) -> String {
         let mut parsed_program = parse_program(source_code).expect("source should parse");
         transform_labeled_statements(
@@ -98,6 +112,7 @@ mod tests {
             identifier_names_generator,
             "",
             identifiers_dictionary,
+            reserved_names,
         );
         generate_code(&parsed_program.program, parsed_program.source_map, true)
             .expect("code should generate")
@@ -108,6 +123,7 @@ mod tests {
         let code = transform(
             "label: for (;;) { continue label; break label; }",
             IdentifierNamesGeneratorKind::Hexadecimal,
+            &[],
             &[],
         );
 
@@ -123,6 +139,7 @@ mod tests {
             "label: for (;;) { break; }",
             IdentifierNamesGeneratorKind::Hexadecimal,
             &[],
+            &[],
         );
 
         assert!(code.contains("_0x0:for(;;){break;}"), "{code}");
@@ -133,6 +150,7 @@ mod tests {
         let code = transform(
             "label: for (;;) { break label; }",
             IdentifierNamesGeneratorKind::Mangled,
+            &[],
             &[],
         );
 
@@ -146,6 +164,7 @@ mod tests {
             "label: for (;;) { break label; }",
             IdentifierNamesGeneratorKind::Dictionary,
             &dictionary,
+            &[],
         );
 
         assert!(
@@ -160,6 +179,23 @@ mod tests {
             "label: for (;;) { continue label; break label; }",
             IdentifierNamesGeneratorKind::KeepOriginal,
             &[],
+            &[],
+        );
+
+        assert!(
+            code.contains("label:for(;;){continue label;break label;}"),
+            "{code}"
+        );
+    }
+
+    #[test]
+    fn keeps_reserved_label_names() {
+        let reserved_names = vec!["label".to_string()];
+        let code = transform(
+            "label: for (;;) { continue label; break label; }",
+            IdentifierNamesGeneratorKind::Hexadecimal,
+            &[],
+            &reserved_names,
         );
 
         assert!(
