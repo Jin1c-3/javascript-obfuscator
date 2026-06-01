@@ -727,6 +727,30 @@ mod tests {
     }
 
     #[test]
+    fn obfuscate_split_strings_emoji_modifier_as_single_chunk() {
+        let result = obfuscate(
+            "const value = 'ab👋🏼cd';",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                split_strings: Some(true),
+                split_strings_chunk_length: Some(1),
+                unicode_escape_sequence: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(
+            result.code.contains("const value='a'+'b'+'👋🏼'+'c'+'d';"),
+            "{}",
+            result.code
+        );
+    }
+
+    #[test]
     fn obfuscate_keeps_string_literals_when_split_strings_disabled() {
         let result = obfuscate(
             "const value = 'abcdef';",

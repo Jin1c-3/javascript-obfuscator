@@ -18,3 +18,4 @@ swc_ecma_ast.workspace = true
 swc_ecma_codegen.workspace = true
 swc_ecma_parser.workspace = true
 swc_ecma_visit.workspace = true
+unicode-segmentation.workspace = true

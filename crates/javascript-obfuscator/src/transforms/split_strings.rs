@@ -2,6 +2,7 @@ use regex::Regex;
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::{BinExpr, BinaryOp, CallExpr, Callee, Expr, ExprStmt, Lit, Program, Str};
 use swc_ecma_visit::{VisitMut, VisitMutWith};
+use unicode_segmentation::UnicodeSegmentation;
 
 pub fn transform_split_strings(
     program: &mut Program,
@@ -121,11 +122,11 @@ fn transform_string_literal(string_literal: &Str, chunk_length: usize) -> Option
 }
 
 fn chunk_string(value: &str, chunk_length: usize) -> Vec<String> {
-    let characters = value.chars().collect::<Vec<_>>();
+    let graphemes = value.graphemes(true).collect::<Vec<_>>();
 
-    characters
+    graphemes
         .chunks(chunk_length)
-        .map(|chunk| chunk.iter().collect())
+        .map(|chunk| chunk.concat())
         .collect()
 }
 
@@ -187,6 +188,13 @@ mod tests {
         let code = transform("const value = 'abcdef';", true, 3, &[], false);
 
         assert!(code.contains("const value='abc'+'def'"), "{code}");
+    }
+
+    #[test]
+    fn split_strings_emoji_modifier_as_single_chunk() {
+        let code = transform("const value = 'ab👋🏼cd';", true, 1, &[], false);
+
+        assert!(code.contains("const value='a'+'b'+'👋🏼'+'c'+'d'"), "{code}");
     }
 
     #[test]
