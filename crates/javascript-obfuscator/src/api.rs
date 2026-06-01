@@ -2533,6 +2533,48 @@ mod tests {
     }
 
     #[test]
+    fn obfuscate_uses_rc4_string_array_calls_transform_inside_function_bodies() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "stringArray": true,
+            "stringArrayCallsTransform": true,
+            "stringArrayCallsTransformThreshold": 1,
+            "stringArrayEncoding": ["rc4"],
+            "stringArrayIndexShift": false,
+            "stringArrayRotate": false,
+            "stringArrayShuffle": false,
+            "stringArrayThreshold": 1,
+            "unicodeEscapeSequence": false
+        }))
+        .expect("string array calls transform options should deserialize");
+        let result = obfuscate(
+            "function test(){ const first = 'foo'; return first + 'bar'; } console.log(test());",
+            options,
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(
+            result.code.contains(
+                "function test(){const _0x2={_0x0:0x0,_0x1:'rc4K',_0x2:0x1,_0x3:'rc4K'};const first=_0x1(_0x2._0x0,_0x2._0x1);return first+_0x1(_0x2._0x2,_0x2._0x3);}"
+            ),
+            "{}",
+            result.code
+        );
+
+        let output = run_node_source(&result.code);
+
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "foobar\n");
+        assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    }
+
+    #[test]
     fn obfuscate_keeps_root_string_array_calls_inline_with_calls_transform_enabled() {
         let options: Options = serde_json::from_value(json!({
             "compact": true,

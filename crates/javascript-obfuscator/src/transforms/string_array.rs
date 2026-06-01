@@ -460,19 +460,51 @@ impl VisitMut for FunctionStringArrayCallsTransform<'_> {
             return;
         }
 
-        let Some(first_argument) = call_expression.args.first_mut() else {
-            return;
-        };
-
-        if !is_generated_string_array_call_index_literal(first_argument.expr.as_ref()) {
+        if !self.replace_generated_string_array_call_argument(call_expression, 0) {
             return;
         }
 
+        self.replace_generated_rc4_decode_key_argument(call_expression);
+    }
+}
+
+impl FunctionStringArrayCallsTransform<'_> {
+    fn replace_generated_string_array_call_argument(
+        &mut self,
+        call_expression: &mut CallExpr,
+        argument_index: usize,
+    ) -> bool {
+        let Some(argument) = call_expression.args.get_mut(argument_index) else {
+            return false;
+        };
+
+        if !is_generated_string_array_call_index_literal(argument.expr.as_ref()) {
+            return false;
+        }
+
+        self.replace_argument_with_storage_member(argument);
+
+        true
+    }
+
+    fn replace_generated_rc4_decode_key_argument(&mut self, call_expression: &mut CallExpr) {
+        let Some(argument) = call_expression.args.get_mut(1) else {
+            return;
+        };
+
+        if !is_generated_rc4_decode_key_literal(argument.expr.as_ref()) {
+            return;
+        }
+
+        self.replace_argument_with_storage_member(argument);
+    }
+
+    fn replace_argument_with_storage_member(&mut self, argument: &mut ExprOrSpread) {
         let storage_key = format!("_0x{}", self.entries.len());
-        let original_argument = first_argument.expr.as_ref().clone();
+        let original_argument = argument.expr.as_ref().clone();
 
         self.entries.push((storage_key.clone(), original_argument));
-        *first_argument.expr =
+        *argument.expr =
             create_string_array_calls_storage_member_expression(&self.storage_name, &storage_key);
     }
 }
@@ -1184,6 +1216,14 @@ fn is_generated_string_array_call_index_literal(expression: &Expr) -> bool {
         }
         _ => false,
     }
+}
+
+fn is_generated_rc4_decode_key_literal(expression: &Expr) -> bool {
+    let Expr::Lit(Lit::Str(string)) = expression else {
+        return false;
+    };
+
+    string.span == DUMMY_SP && string.value == DEFAULT_RC4_KEY
 }
 
 fn parse_index_string(value: &str) -> Option<usize> {
