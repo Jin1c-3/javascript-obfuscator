@@ -1,6 +1,8 @@
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use crate::diagnostics::{ObfuscatorError, ObfuscatorResult};
 use crate::generators::IdentifierNamesGeneratorKind;
 
 pub type IdentifierNamesCache = Map<String, Value>;
@@ -116,6 +118,31 @@ impl ObfuscationResult {
             identifier_names_cache,
         }
     }
+}
+
+pub fn validate_regex_options(options: &Options) -> ObfuscatorResult<()> {
+    validate_regex_option("reservedNames", options.reserved_names.as_deref())?;
+    validate_regex_option("reservedStrings", options.reserved_strings.as_deref())?;
+    validate_regex_option(
+        "forceTransformStrings",
+        options.force_transform_strings.as_deref(),
+    )
+}
+
+fn validate_regex_option(option_name: &str, patterns: Option<&[String]>) -> ObfuscatorResult<()> {
+    let Some(patterns) = patterns else {
+        return Ok(());
+    };
+
+    for pattern in patterns {
+        Regex::new(pattern).map_err(|error| {
+            ObfuscatorError::Options(format!(
+                "Invalid regular expression in `{option_name}` option: `{pattern}` ({error})"
+            ))
+        })?;
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

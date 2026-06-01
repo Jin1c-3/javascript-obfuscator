@@ -1,6 +1,6 @@
 use crate::codegen::generate_code;
 use crate::diagnostics::ObfuscatorResult;
-use crate::options::{ObfuscationResult, Options};
+use crate::options::{validate_regex_options, ObfuscationResult, Options};
 use crate::parser::parse_program;
 use crate::storages::normalize_identifier_names_cache;
 use crate::transforms::apply_transforms;
@@ -11,6 +11,7 @@ const BASE64_ALPHABET: &[u8; 64] =
 pub fn run_pipeline(source_code: &str, options: Options) -> ObfuscatorResult<ObfuscationResult> {
     let (hashbang, prepared_code) = extract_hashbang(source_code);
     let mut parsed_program = parse_program(&prepared_code)?;
+    validate_regex_options(&options)?;
     apply_transforms(&mut parsed_program.program, &options);
     let mut code = generate_code(
         &parsed_program.program,

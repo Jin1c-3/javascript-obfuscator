@@ -305,6 +305,65 @@ mod tests {
         assert!(error.to_string().contains("JavaScript parse error"));
     }
 
+    fn assert_invalid_regex_option_error(option_name: &str, options: Options) {
+        let error = obfuscate("const value = 'abcdef';", options)
+            .expect_err("invalid regex option should fail");
+        let message = error.to_string();
+
+        assert!(message.contains(option_name), "{message}");
+        assert!(message.contains('['), "{message}");
+    }
+
+    #[test]
+    fn obfuscate_reports_invalid_regex_option_reserved_strings() {
+        assert_invalid_regex_option_error(
+            "reservedStrings",
+            Options {
+                reserved_strings: Some(vec!["[".to_string()]),
+                string_array: Some(false),
+                ..Options::default()
+            },
+        );
+    }
+
+    #[test]
+    fn obfuscate_reports_invalid_regex_option_force_transform_strings() {
+        assert_invalid_regex_option_error(
+            "forceTransformStrings",
+            Options {
+                force_transform_strings: Some(vec!["[".to_string()]),
+                string_array: Some(false),
+                ..Options::default()
+            },
+        );
+    }
+
+    #[test]
+    fn obfuscate_reports_invalid_regex_option_reserved_names() {
+        assert_invalid_regex_option_error(
+            "reservedNames",
+            Options {
+                reserved_names: Some(vec!["[".to_string()]),
+                string_array: Some(false),
+                ..Options::default()
+            },
+        );
+    }
+
+    #[test]
+    fn obfuscate_reports_parse_error_before_invalid_regex_option() {
+        let error = obfuscate(
+            "const =",
+            Options {
+                reserved_strings: Some(vec!["[".to_string()]),
+                ..Options::default()
+            },
+        )
+        .expect_err("parse should fail before option regex validation");
+
+        assert!(error.to_string().contains("JavaScript parse error"));
+    }
+
     #[test]
     fn obfuscate_disable_console_output_suppresses_console_methods_at_runtime() {
         let options: Options = serde_json::from_value(json!({
