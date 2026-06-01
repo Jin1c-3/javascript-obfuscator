@@ -249,6 +249,56 @@ mod tests {
     }
 
     #[test]
+    fn obfuscate_source_map_sources_mode_sources_omits_sources_content() {
+        let options: Options = serde_json::from_value(json!({
+            "inputFileName": "input.js",
+            "sourceMap": true,
+            "sourceMapSourcesMode": "sources"
+        }))
+        .expect("source map options should deserialize");
+        let result = obfuscate("const value = 1;", options).expect("obfuscation should succeed");
+        let source_map: Value =
+            serde_json::from_str(&result.source_map).expect("source map should be JSON");
+
+        assert_eq!(source_map["sources"], json!(["input.js"]));
+        assert!(source_map.get("sourcesContent").is_none());
+    }
+
+    #[test]
+    fn obfuscate_inline_source_map_appends_data_url_comment() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "sourceMap": true,
+            "sourceMapMode": "inline",
+            "stringArray": false
+        }))
+        .expect("source map options should deserialize");
+        let result = obfuscate("const value = 1;", options).expect("obfuscation should succeed");
+
+        assert!(result
+            .code
+            .contains("\n//# sourceMappingURL=data:application/json;base64,"));
+    }
+
+    #[test]
+    fn obfuscate_separate_source_map_appends_configured_url_comment() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "sourceMap": true,
+            "sourceMapMode": "separate",
+            "sourceMapBaseUrl": "https://cdn.example/maps/",
+            "sourceMapFileName": "bundle.js.map",
+            "stringArray": false
+        }))
+        .expect("source map options should deserialize");
+        let result = obfuscate("const value = 1;", options).expect("obfuscation should succeed");
+
+        assert!(result
+            .code
+            .ends_with("\n//# sourceMappingURL=https://cdn.example/maps/bundle.js.map"));
+    }
+
+    #[test]
     fn obfuscate_reports_parse_errors() {
         let error = obfuscate("const =", Options::default()).expect_err("parse should fail");
 

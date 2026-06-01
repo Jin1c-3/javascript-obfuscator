@@ -5,6 +5,9 @@ use crate::parser::parse_program;
 use crate::storages::normalize_identifier_names_cache;
 use crate::transforms::apply_transforms;
 
+const BASE64_ALPHABET: &[u8; 64] =
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
 pub fn run_pipeline(source_code: &str, options: Options) -> ObfuscatorResult<ObfuscationResult> {
     let (hashbang, prepared_code) = extract_hashbang(source_code);
     let mut parsed_program = parse_program(&prepared_code)?;
@@ -24,6 +27,10 @@ pub fn run_pipeline(source_code: &str, options: Options) -> ObfuscatorResult<Obf
     } else {
         String::new()
     };
+
+    if !source_map.is_empty() {
+        code = append_source_mapping_url(code, &source_map, &options);
+    }
 
     let identifier_names_cache = normalize_identifier_names_cache(options.identifier_names_cache);
 
@@ -56,13 +63,83 @@ fn build_source_map_metadata(source_code: &str, options: &Options) -> String {
         .filter(|value| !value.is_empty())
         .unwrap_or("sourceMap");
 
-    serde_json::json!({
-        "version": 3,
-        "file": source_name,
-        "sources": [source_name],
-        "sourcesContent": [source_code],
-        "names": [],
-        "mappings": ""
-    })
-    .to_string()
+    let mut source_map = serde_json::Map::new();
+    source_map.insert("version".to_string(), serde_json::json!(3));
+    source_map.insert("file".to_string(), serde_json::json!(source_name));
+    source_map.insert("sources".to_string(), serde_json::json!([source_name]));
+
+    if options.source_map_sources_mode.as_deref() != Some("sources") {
+        source_map.insert(
+            "sourcesContent".to_string(),
+            serde_json::json!([source_code]),
+        );
+    }
+
+    source_map.insert("names".to_string(), serde_json::json!([]));
+    source_map.insert("mappings".to_string(), serde_json::json!(""));
+
+    serde_json::Value::Object(source_map).to_string()
+}
+
+fn append_source_mapping_url(mut code: String, source_map: &str, options: &Options) -> String {
+    let Some(source_mapping_url) = source_mapping_url(source_map, options) else {
+        return code;
+    };
+
+    code.push('\n');
+    code.push_str("//# sourceMappingURL=");
+    code.push_str(&source_mapping_url);
+    code
+}
+
+fn source_mapping_url(source_map: &str, options: &Options) -> Option<String> {
+    match options.source_map_mode.as_deref() {
+        Some("inline") => Some(format!(
+            "data:application/json;base64,{}",
+            encode_base64(source_map.as_bytes())
+        )),
+        _ => {
+            let url = format!(
+                "{}{}",
+                options.source_map_base_url.as_deref().unwrap_or(""),
+                options.source_map_file_name.as_deref().unwrap_or("")
+            );
+
+            if url.is_empty() {
+                None
+            } else {
+                Some(url)
+            }
+        }
+    }
+}
+
+fn encode_base64(bytes: &[u8]) -> String {
+    let mut encoded = String::with_capacity(bytes.len().div_ceil(3) * 4);
+
+    for chunk in bytes.chunks(3) {
+        let first = chunk[0];
+        let second = chunk.get(1).copied().unwrap_or(0);
+        let third = chunk.get(2).copied().unwrap_or(0);
+
+        encoded.push(BASE64_ALPHABET[(first >> 2) as usize] as char);
+        encoded
+            .push(BASE64_ALPHABET[(((first & 0b0000_0011) << 4) | (second >> 4)) as usize] as char);
+
+        if chunk.len() > 1 {
+            encoded.push(
+                BASE64_ALPHABET[(((second & 0b0000_1111) << 2) | (third >> 6)) as usize] as char,
+            );
+        } else {
+            encoded.push('=');
+        }
+
+        if chunk.len() > 2 {
+            encoded.push(BASE64_ALPHABET[(third & 0b0011_1111) as usize] as char);
+        } else {
+            encoded.push('=');
+        }
+    }
+
+    encoded
 }

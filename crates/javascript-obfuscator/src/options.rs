@@ -49,6 +49,10 @@ pub struct Options {
     #[serde(default)]
     pub source_map: Option<bool>,
     #[serde(default)]
+    pub source_map_base_url: Option<String>,
+    #[serde(default)]
+    pub source_map_file_name: Option<String>,
+    #[serde(default)]
     pub input_file_name: Option<String>,
     #[serde(default)]
     pub source_map_mode: Option<String>,
