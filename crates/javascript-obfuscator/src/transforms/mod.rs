@@ -49,6 +49,7 @@ pub fn apply_transforms(program: &mut Program, options: &Options) {
         program,
         options.split_strings.unwrap_or(false),
         options.split_strings_chunk_length.unwrap_or(10),
+        options.reserved_strings.as_deref().unwrap_or(&[]),
     );
     member_expressions::transform_member_expressions(
         program,

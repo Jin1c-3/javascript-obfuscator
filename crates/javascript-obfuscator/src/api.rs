@@ -746,6 +746,27 @@ mod tests {
     }
 
     #[test]
+    fn obfuscate_keeps_reserved_split_string_literals_inline() {
+        let result = obfuscate(
+            "const keep = 'please-keep-me'; const split = 'abcdef';",
+            Options {
+                compact: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                reserved_strings: Some(vec!["keep".to_string()]),
+                split_strings: Some(true),
+                split_strings_chunk_length: Some(3),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("const keep='please-keep-me';"));
+        assert!(result.code.contains("const split='abc'+'def';"));
+    }
+
+    #[test]
     fn obfuscate_aliases_export_specifier_when_rename_globals_enabled() {
         let result = obfuscate(
             "const foo = 1; export {foo};",
