@@ -1,5 +1,5 @@
 use regex::Regex;
-use serde::{Deserialize, Serialize};
+use serde::{de::Error as DeError, Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
 
 use crate::diagnostics::{ObfuscatorError, ObfuscatorResult};
@@ -46,7 +46,7 @@ pub struct Options {
     pub reserved_strings: Option<Vec<String>>,
     #[serde(default)]
     pub split_strings: Option<bool>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_optional_usize_floor")]
     pub split_strings_chunk_length: Option<usize>,
     #[serde(default)]
     pub unicode_escape_sequence: Option<bool>,
@@ -147,6 +147,45 @@ fn validate_regex_option(option_name: &str, patterns: Option<&[String]>) -> Obfu
     Ok(())
 }
 
+fn deserialize_optional_usize_floor<'de, D>(deserializer: D) -> Result<Option<usize>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let Some(value) = Option::<Value>::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+
+    match value {
+        Value::Null => Ok(None),
+        Value::Number(number) => deserialize_usize_number(number).map(Some),
+        _ => Err(D::Error::custom("expected a number or null")),
+    }
+}
+
+fn deserialize_usize_number<D>(number: serde_json::Number) -> Result<usize, D>
+where
+    D: DeError,
+{
+    if let Some(unsigned) = number.as_u64() {
+        return usize::try_from(unsigned).map_err(D::custom);
+    }
+
+    let Some(float) = number.as_f64() else {
+        return Err(D::custom("expected a finite non-negative number"));
+    };
+
+    if !float.is_finite() || float < 0.0 {
+        return Err(D::custom("expected a finite non-negative number"));
+    }
+
+    let floored = float.floor();
+    if floored > usize::MAX as f64 {
+        return Err(D::custom("number is too large"));
+    }
+
+    Ok(floored as usize)
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -190,5 +229,15 @@ mod tests {
             options.force_transform_strings,
             Some(vec!["ar$".to_string()])
         );
+    }
+
+    #[test]
+    fn deserializes_split_strings_chunk_length_float_for_option_compatibility() {
+        let options: Options = serde_json::from_value(json!({
+            "splitStringsChunkLength": 5.6
+        }))
+        .expect("split strings chunk length should deserialize");
+
+        assert_eq!(options.split_strings_chunk_length, Some(5));
     }
 }
