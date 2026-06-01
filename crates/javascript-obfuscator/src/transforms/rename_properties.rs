@@ -1,0 +1,244 @@
+use std::collections::HashMap;
+
+use regex::Regex;
+use swc_common::DUMMY_SP;
+use swc_ecma_ast::{
+    AssignPat, AssignPatProp, Expr, IdentName, KeyValuePatProp, Lit, MemberExpr, MemberProp,
+    ObjectPat, ObjectPatProp, Pat, Program, PropName, Str,
+};
+use swc_ecma_visit::{VisitMut, VisitMutWith};
+
+use crate::generators::{IdentifierNamesGenerator, IdentifierNamesGeneratorKind};
+
+const UNSAFE_MODE: &str = "unsafe";
+const RESERVED_DOM_PROPERTY_NAMES: &[&str] = &["constructor", "log"];
+
+pub fn transform_rename_properties(
+    program: &mut Program,
+    enabled: bool,
+    mode: Option<&str>,
+    generator_kind: IdentifierNamesGeneratorKind,
+    identifiers_prefix: &str,
+    identifiers_dictionary: &[String],
+    reserved_names: &[String],
+) {
+    if !enabled || mode != Some(UNSAFE_MODE) {
+        return;
+    }
+
+    program.visit_mut_with(&mut RenamePropertiesTransform {
+        generator: IdentifierNamesGenerator::new(
+            generator_kind,
+            identifiers_prefix,
+            identifiers_dictionary.to_vec(),
+        ),
+        generator_kind,
+        property_names: HashMap::new(),
+        reserved_name_patterns: compile_patterns(reserved_names),
+    });
+}
+
+struct RenamePropertiesTransform {
+    generator: IdentifierNamesGenerator,
+    generator_kind: IdentifierNamesGeneratorKind,
+    property_names: HashMap<String, String>,
+    reserved_name_patterns: Vec<Regex>,
+}
+
+impl VisitMut for RenamePropertiesTransform {
+    fn visit_mut_prop_name(&mut self, property_name: &mut PropName) {
+        property_name.visit_mut_children_with(self);
+
+        match property_name {
+            PropName::Ident(identifier) => {
+                let renamed = self.rename_property_name(identifier.sym.as_ref());
+                *property_name = create_string_property_name(&renamed);
+            }
+            PropName::Str(string_literal) => {
+                let renamed = self.rename_property_name(&string_literal.value.to_string_lossy());
+                *string_literal = create_string_literal(&renamed);
+            }
+            PropName::Computed(computed_property_name) => {
+                let Expr::Lit(Lit::Str(string_literal)) = computed_property_name.expr.as_ref()
+                else {
+                    return;
+                };
+                let renamed = self.rename_property_name(&string_literal.value.to_string_lossy());
+                *computed_property_name.expr = Expr::Lit(Lit::Str(create_string_literal(&renamed)));
+            }
+            _ => {}
+        }
+    }
+
+    fn visit_mut_member_expr(&mut self, member_expr: &mut MemberExpr) {
+        member_expr.visit_mut_children_with(self);
+
+        match &mut member_expr.prop {
+            MemberProp::Ident(identifier) => {
+                let renamed = self.rename_property_name(identifier.sym.as_ref());
+                *identifier = IdentName::from(renamed);
+            }
+            MemberProp::Computed(computed_property_name) => {
+                let Expr::Lit(Lit::Str(string_literal)) = computed_property_name.expr.as_ref()
+                else {
+                    return;
+                };
+                let renamed = self.rename_property_name(&string_literal.value.to_string_lossy());
+                *computed_property_name.expr = Expr::Lit(Lit::Str(create_string_literal(&renamed)));
+            }
+            MemberProp::PrivateName(_) => {}
+        }
+    }
+
+    fn visit_mut_object_pat(&mut self, object_pattern: &mut ObjectPat) {
+        object_pattern.visit_mut_children_with(self);
+
+        for property in &mut object_pattern.props {
+            let ObjectPatProp::Assign(assign_property) = property else {
+                continue;
+            };
+
+            *property = self.create_key_value_pattern_property(assign_property);
+        }
+    }
+}
+
+impl RenamePropertiesTransform {
+    fn rename_property_name(&mut self, name: &str) -> String {
+        if self.should_keep_name(name)
+            || self.generator_kind == IdentifierNamesGeneratorKind::KeepOriginal
+        {
+            return name.to_string();
+        }
+
+        if let Some(renamed) = self.property_names.get(name) {
+            return renamed.clone();
+        }
+
+        let renamed = self.generator.generate_next();
+        self.property_names
+            .insert(name.to_string(), renamed.clone());
+
+        renamed
+    }
+
+    fn should_keep_name(&self, name: &str) -> bool {
+        RESERVED_DOM_PROPERTY_NAMES.contains(&name)
+            || self
+                .reserved_name_patterns
+                .iter()
+                .any(|reserved_name_pattern| reserved_name_pattern.is_match(name))
+    }
+
+    fn create_key_value_pattern_property(
+        &mut self,
+        assign_property: &AssignPatProp,
+    ) -> ObjectPatProp {
+        let binding_identifier = assign_property.key.clone();
+        let property_name = self.rename_property_name(binding_identifier.id.sym.as_ref());
+        let key = create_string_property_name(&property_name);
+        let value = match &assign_property.value {
+            Some(default_value) => Pat::Assign(AssignPat {
+                span: DUMMY_SP,
+                left: Box::new(Pat::Ident(binding_identifier)),
+                right: default_value.clone(),
+            }),
+            None => Pat::Ident(binding_identifier),
+        };
+
+        ObjectPatProp::KeyValue(KeyValuePatProp {
+            key,
+            value: Box::new(value),
+        })
+    }
+}
+
+fn compile_patterns(patterns: &[String]) -> Vec<Regex> {
+    patterns
+        .iter()
+        .filter_map(|pattern| Regex::new(pattern).ok())
+        .collect()
+}
+
+fn create_string_property_name(value: &str) -> PropName {
+    PropName::Str(create_string_literal(value))
+}
+
+fn create_string_literal(value: &str) -> Str {
+    Str {
+        span: DUMMY_SP,
+        value: value.to_string().into(),
+        raw: Some(single_quote_raw(value).into()),
+    }
+}
+
+fn single_quote_raw(value: &str) -> String {
+    let escaped = value.replace('\\', "\\\\").replace('\'', "\\'");
+
+    format!("'{escaped}'")
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::codegen::generate_code;
+    use crate::generators::IdentifierNamesGeneratorKind;
+    use crate::parser::parse_program;
+    use crate::transforms::object_expressions::transform_object_expressions;
+
+    use super::*;
+
+    fn transform(source_code: &str, reserved_names: &[String]) -> String {
+        let mut parsed_program = parse_program(source_code).expect("source should parse");
+        transform_object_expressions(&mut parsed_program.program);
+        transform_rename_properties(
+            &mut parsed_program.program,
+            true,
+            Some(UNSAFE_MODE),
+            IdentifierNamesGeneratorKind::Hexadecimal,
+            "",
+            &[],
+            reserved_names,
+        );
+        generate_code(&parsed_program.program, parsed_program.source_map, true)
+            .expect("code should generate")
+    }
+
+    #[test]
+    fn renames_object_keys_and_member_expressions_consistently() {
+        let code = transform("const value = {'foo': 1}; value.foo; value['foo'];", &[]);
+
+        assert!(code.contains("const value={'_0x0':1};"), "{code}");
+        assert!(code.contains("value._0x0;"), "{code}");
+        assert!(code.contains("value['_0x0'];"), "{code}");
+    }
+
+    #[test]
+    fn keeps_reserved_properties() {
+        let reserved_names = vec!["^keep$".to_string()];
+        let code = transform(
+            "const value = {'keep': 1, 'change': 2}; value.keep; value.change;",
+            &reserved_names,
+        );
+
+        assert!(code.contains("'keep':1"), "{code}");
+        assert!(code.contains("'_0x0':2"), "{code}");
+        assert!(code.contains("value.keep;"), "{code}");
+        assert!(code.contains("value._0x0;"), "{code}");
+    }
+
+    #[test]
+    fn skips_computed_non_string_members() {
+        let code = transform("const value = {'foo': 1}; value[foo];", &[]);
+
+        assert!(code.contains("const value={'_0x0':1};"), "{code}");
+        assert!(code.contains("value[foo];"), "{code}");
+    }
+
+    #[test]
+    fn renames_shorthand_object_pattern_properties() {
+        let code = transform("const value = {'foo': 1}; const {foo} = value;", &[]);
+
+        assert!(code.contains("const value={'_0x0':1};"), "{code}");
+        assert!(code.contains("const{'_0x0':foo}=value;"), "{code}");
+    }
+}

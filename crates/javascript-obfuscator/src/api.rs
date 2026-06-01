@@ -799,6 +799,135 @@ mod tests {
     }
 
     #[test]
+    fn obfuscate_renames_properties_in_unsafe_mode() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "identifierNamesGenerator": "hexadecimal",
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "renameProperties": true,
+            "renamePropertiesMode": "unsafe",
+            "stringArray": false
+        }))
+        .expect("rename properties options should deserialize");
+        let result = obfuscate(
+            "const object = {foo: 1}; console.log(object.foo, object['foo']);",
+            options,
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(
+            result.code.contains("const object={'_0x0':0x1};"),
+            "{}",
+            result.code
+        );
+        assert!(result.code.contains("object._0x0"), "{}", result.code);
+        assert!(result.code.contains("object['_0x0']"), "{}", result.code);
+
+        let output = run_node_source(&result.code);
+
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "1 1\n");
+    }
+
+    #[test]
+    fn obfuscate_keeps_reserved_properties_when_renaming_properties() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "renameProperties": true,
+            "renamePropertiesMode": "unsafe",
+            "reservedNames": ["^keep$"],
+            "stringArray": false
+        }))
+        .expect("rename properties options should deserialize");
+        let result = obfuscate(
+            "const object = {keep: 1, change: 2}; console.log(object.keep, object.change);",
+            options,
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("'keep':0x1"), "{}", result.code);
+        assert!(result.code.contains("'_0x0':0x2"), "{}", result.code);
+        assert!(result.code.contains("object.keep"), "{}", result.code);
+        assert!(result.code.contains("object._0x0"), "{}", result.code);
+    }
+
+    #[test]
+    fn obfuscate_renames_top_level_destructuring_properties_in_unsafe_mode() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "identifierNamesGenerator": "hexadecimal",
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "renameProperties": true,
+            "renamePropertiesMode": "unsafe",
+            "stringArray": false
+        }))
+        .expect("rename properties options should deserialize");
+        let result = obfuscate(
+            "const object = {foo: 1}; const {foo} = object; console.log(foo);",
+            options,
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(
+            result.code.contains("{'_0x0':foo}=object"),
+            "{}",
+            result.code
+        );
+
+        let output = run_node_source(&result.code);
+
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "1\n");
+    }
+
+    #[test]
+    fn obfuscate_renames_class_methods_in_unsafe_property_mode() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "identifierNamesGenerator": "hexadecimal",
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "renameProperties": true,
+            "renamePropertiesMode": "unsafe",
+            "stringArray": false
+        }))
+        .expect("rename properties options should deserialize");
+        let result = obfuscate(
+            "class Foo { bar() { return 1; } } const foo = new Foo(); console.log(foo.bar());",
+            options,
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(
+            result.code.contains("['_0x0'](){return 0x1;}"),
+            "{}",
+            result.code
+        );
+        assert!(result.code.contains("foo._0x0()"), "{}", result.code);
+
+        let output = run_node_source(&result.code);
+
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "1\n");
+    }
+
+    #[test]
     fn obfuscate_transforms_class_method_identifier_key() {
         let result = obfuscate(
             "class Foo { bar() {} }",

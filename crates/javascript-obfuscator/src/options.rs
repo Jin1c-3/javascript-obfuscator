@@ -27,6 +27,10 @@ pub struct Options {
     #[serde(default)]
     pub transform_object_keys: Option<bool>,
     #[serde(default)]
+    pub rename_properties: Option<bool>,
+    #[serde(default)]
+    pub rename_properties_mode: Option<String>,
+    #[serde(default)]
     pub string_array_index_shift: Option<bool>,
     #[serde(default)]
     pub string_array_shuffle: Option<bool>,
@@ -239,5 +243,17 @@ mod tests {
         .expect("split strings chunk length should deserialize");
 
         assert_eq!(options.split_strings_chunk_length, Some(5));
+    }
+
+    #[test]
+    fn deserializes_rename_properties_options_for_option_compatibility() {
+        let options: Options = serde_json::from_value(json!({
+            "renameProperties": true,
+            "renamePropertiesMode": "unsafe"
+        }))
+        .expect("rename properties options should deserialize");
+
+        assert_eq!(options.rename_properties, Some(true));
+        assert_eq!(options.rename_properties_mode, Some("unsafe".to_string()));
     }
 }

@@ -15,6 +15,7 @@ pub mod number_to_expressions;
 pub mod object_expression_keys;
 pub mod object_expressions;
 pub mod object_pattern_properties;
+pub mod rename_properties;
 pub mod split_strings;
 pub mod string_array;
 pub mod template_literals;
@@ -52,6 +53,15 @@ pub fn apply_transforms(program: &mut Program, options: &Options) {
         options.identifier_names_generator.unwrap_or_default(),
         options.identifiers_prefix.as_deref().unwrap_or(""),
         options.identifiers_dictionary.as_deref().unwrap_or(&[]),
+    );
+    rename_properties::transform_rename_properties(
+        program,
+        options.rename_properties.unwrap_or(false),
+        options.rename_properties_mode.as_deref(),
+        options.identifier_names_generator.unwrap_or_default(),
+        options.identifiers_prefix.as_deref().unwrap_or(""),
+        options.identifiers_dictionary.as_deref().unwrap_or(&[]),
+        options.reserved_names.as_deref().unwrap_or(&[]),
     );
     split_strings::transform_split_strings(
         program,
