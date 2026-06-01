@@ -521,6 +521,81 @@ mod tests {
     }
 
     #[test]
+    fn obfuscate_uses_property_identifier_names_cache_for_renamed_properties() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "identifierNamesCache": {
+                "globalIdentifiers": {},
+                "propertyIdentifiers": {
+                    "foo": "foo_from_cache"
+                }
+            },
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "renameProperties": true,
+            "renamePropertiesMode": "unsafe",
+            "stringArray": false
+        }))
+        .expect("identifier names cache options should deserialize");
+        let result = obfuscate(
+            "const object = {foo: 1, bar: 2}; object.foo; object.bar;",
+            options,
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(
+            result.code.contains("'foo_from_cache':0x1"),
+            "{}",
+            result.code
+        );
+        assert!(result.code.contains("'_0x0':0x2"), "{}", result.code);
+        assert!(
+            result.code.contains("object.foo_from_cache"),
+            "{}",
+            result.code
+        );
+        assert!(result.code.contains("object._0x0"), "{}", result.code);
+
+        let cache = result
+            .identifier_names_cache
+            .expect("cache should be returned");
+
+        assert_eq!(cache["propertyIdentifiers"]["foo"], "foo_from_cache");
+        assert_eq!(cache["propertyIdentifiers"]["bar"], "_0x0");
+    }
+
+    #[test]
+    fn obfuscate_keeps_reserved_property_even_when_cache_contains_mapping() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "identifierNamesCache": {
+                "globalIdentifiers": {},
+                "propertyIdentifiers": {
+                    "keep": "keep_from_cache"
+                }
+            },
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "renameProperties": true,
+            "renamePropertiesMode": "unsafe",
+            "reservedNames": ["^keep$"],
+            "stringArray": false
+        }))
+        .expect("identifier names cache options should deserialize");
+        let result = obfuscate("const object = {keep: 1}; object.keep;", options)
+            .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("'keep':0x1"), "{}", result.code);
+        assert!(result.code.contains("object.keep"), "{}", result.code);
+
+        let cache = result
+            .identifier_names_cache
+            .expect("cache should be returned");
+
+        assert_eq!(cache["propertyIdentifiers"]["keep"], "keep_from_cache");
+    }
+
+    #[test]
     fn obfuscate_multiple_preserves_normalized_identifier_cache() {
         let mut input = BTreeMap::new();
         input.insert("first.js".to_string(), "const first = 1;".to_string());

@@ -77,7 +77,7 @@ fn extract_template_literal_source(template_literal: &Tpl) -> Option<String> {
 fn transform_eval_source(eval_source: &str, options: &Options) -> Option<String> {
     let mut parsed_program = parse_program(eval_source).ok()?;
 
-    apply_transforms(&mut parsed_program.program, options);
+    apply_transforms(&mut parsed_program.program, options, None);
 
     let generated_code =
         generate_code(&parsed_program.program, parsed_program.source_map, true).ok()?;

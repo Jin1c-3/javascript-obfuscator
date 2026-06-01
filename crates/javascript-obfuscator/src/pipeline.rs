@@ -2,7 +2,7 @@ use crate::codegen::generate_code;
 use crate::diagnostics::ObfuscatorResult;
 use crate::options::{validate_regex_options, ObfuscationResult, Options};
 use crate::parser::parse_program;
-use crate::storages::normalize_identifier_names_cache;
+use crate::storages::IdentifierNamesCacheStorage;
 use crate::transforms::apply_transforms;
 
 const BASE64_ALPHABET: &[u8; 64] =
@@ -12,7 +12,15 @@ pub fn run_pipeline(source_code: &str, options: Options) -> ObfuscatorResult<Obf
     let (hashbang, prepared_code) = extract_hashbang(source_code);
     let mut parsed_program = parse_program(&prepared_code)?;
     validate_regex_options(&options)?;
-    apply_transforms(&mut parsed_program.program, &options);
+    let mut identifier_names_cache_storage = options
+        .identifier_names_cache
+        .clone()
+        .map(IdentifierNamesCacheStorage::from_cache);
+    apply_transforms(
+        &mut parsed_program.program,
+        &options,
+        identifier_names_cache_storage.as_mut(),
+    );
     let mut code = generate_code(
         &parsed_program.program,
         parsed_program.source_map,
@@ -33,7 +41,8 @@ pub fn run_pipeline(source_code: &str, options: Options) -> ObfuscatorResult<Obf
         code = append_source_mapping_url(code, &source_map, &options);
     }
 
-    let identifier_names_cache = normalize_identifier_names_cache(options.identifier_names_cache);
+    let identifier_names_cache =
+        identifier_names_cache_storage.map(IdentifierNamesCacheStorage::into_cache);
 
     Ok(ObfuscationResult::new(
         code,

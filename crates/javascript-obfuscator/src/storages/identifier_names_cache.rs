@@ -53,6 +53,27 @@ impl IdentifierNamesCacheStorage {
         );
         generated_name
     }
+
+    pub fn resolve_or_insert_property(
+        &mut self,
+        original_name: &str,
+        generator: &mut IdentifierNamesGenerator,
+    ) -> String {
+        if let Some(existing_name) = self
+            .property_identifiers
+            .get(original_name)
+            .and_then(Value::as_str)
+        {
+            return existing_name.to_string();
+        }
+
+        let generated_name = generator.generate_next();
+        self.property_identifiers.insert(
+            original_name.to_string(),
+            Value::String(generated_name.clone()),
+        );
+        generated_name
+    }
 }
 
 pub fn normalize_identifier_names_cache(
@@ -120,5 +141,33 @@ mod tests {
         let output = storage.into_cache();
         assert_eq!(output["globalIdentifiers"]["alpha"], "_0x9");
         assert_eq!(output["globalIdentifiers"]["beta"], "_0x0");
+    }
+
+    #[test]
+    fn resolves_existing_property_mapping_before_generating() {
+        let mut input = Map::new();
+        input.insert(
+            "propertyIdentifiers".to_string(),
+            json!({ "alpha": "_0x9" }),
+        );
+        let mut storage = IdentifierNamesCacheStorage::from_cache(input);
+        let mut generator = IdentifierNamesGenerator::new(
+            IdentifierNamesGeneratorKind::Hexadecimal,
+            "",
+            Vec::new(),
+        );
+
+        assert_eq!(
+            storage.resolve_or_insert_property("alpha", &mut generator),
+            "_0x9"
+        );
+        assert_eq!(
+            storage.resolve_or_insert_property("beta", &mut generator),
+            "_0x0"
+        );
+
+        let output = storage.into_cache();
+        assert_eq!(output["propertyIdentifiers"]["alpha"], "_0x9");
+        assert_eq!(output["propertyIdentifiers"]["beta"], "_0x0");
     }
 }

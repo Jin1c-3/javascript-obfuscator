@@ -10,6 +10,7 @@ use swc_ecma_ast::{
 use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use crate::generators::{IdentifierNamesGenerator, IdentifierNamesGeneratorKind};
+use crate::storages::IdentifierNamesCacheStorage;
 
 const UNSAFE_MODE: &str = "unsafe";
 const SAFE_MODE: &str = "safe";
@@ -19,18 +20,13 @@ static RESERVED_DOM_PROPERTY_NAMES: OnceLock<HashSet<String>> = OnceLock::new();
 
 pub fn transform_rename_properties(
     program: &mut Program,
-    enabled: bool,
-    mode: Option<&str>,
-    generator_kind: IdentifierNamesGeneratorKind,
-    identifiers_prefix: &str,
-    identifiers_dictionary: &[String],
-    reserved_names: &[String],
+    options: RenamePropertiesTransformOptions<'_>,
 ) {
-    if !enabled {
+    if !options.enabled {
         return;
     }
 
-    let mode = mode.unwrap_or(SAFE_MODE);
+    let mode = options.mode.unwrap_or(SAFE_MODE);
     if mode != SAFE_MODE && mode != UNSAFE_MODE {
         return;
     }
@@ -43,25 +39,37 @@ pub fn transform_rename_properties(
 
     program.visit_mut_with(&mut RenamePropertiesTransform {
         generator: IdentifierNamesGenerator::new(
-            generator_kind,
-            identifiers_prefix,
-            identifiers_dictionary.to_vec(),
+            options.generator_kind,
+            options.identifiers_prefix,
+            options.identifiers_dictionary.to_vec(),
         ),
         excluded_property_names,
-        generator_kind,
+        generator_kind: options.generator_kind,
+        identifier_names_cache_storage: options.identifier_names_cache_storage,
         property_names: HashMap::new(),
-        reserved_name_patterns: compile_patterns(reserved_names),
+        reserved_name_patterns: compile_patterns(options.reserved_names),
     });
+}
+
+pub struct RenamePropertiesTransformOptions<'a> {
+    pub enabled: bool,
+    pub mode: Option<&'a str>,
+    pub generator_kind: IdentifierNamesGeneratorKind,
+    pub identifiers_prefix: &'a str,
+    pub identifiers_dictionary: &'a [String],
+    pub reserved_names: &'a [String],
+    pub identifier_names_cache_storage: Option<&'a mut IdentifierNamesCacheStorage>,
 }
 
 struct AutoExcludedPropertyNamesCollector {
     excluded_property_names: HashSet<String>,
 }
 
-struct RenamePropertiesTransform {
+struct RenamePropertiesTransform<'a> {
     generator: IdentifierNamesGenerator,
     excluded_property_names: HashSet<String>,
     generator_kind: IdentifierNamesGeneratorKind,
+    identifier_names_cache_storage: Option<&'a mut IdentifierNamesCacheStorage>,
     property_names: HashMap<String, String>,
     reserved_name_patterns: Vec<Regex>,
 }
@@ -95,7 +103,7 @@ impl Visit for AutoExcludedPropertyNamesCollector {
     }
 }
 
-impl VisitMut for RenamePropertiesTransform {
+impl VisitMut for RenamePropertiesTransform<'_> {
     fn visit_mut_prop_name(&mut self, property_name: &mut PropName) {
         property_name.visit_mut_children_with(self);
 
@@ -153,12 +161,17 @@ impl VisitMut for RenamePropertiesTransform {
     }
 }
 
-impl RenamePropertiesTransform {
+impl RenamePropertiesTransform<'_> {
     fn rename_property_name(&mut self, name: &str) -> String {
         if self.should_keep_name(name)
             || self.generator_kind == IdentifierNamesGeneratorKind::KeepOriginal
         {
             return name.to_string();
+        }
+
+        if let Some(identifier_names_cache_storage) = self.identifier_names_cache_storage.as_mut() {
+            return identifier_names_cache_storage
+                .resolve_or_insert_property(name, &mut self.generator);
         }
 
         if let Some(renamed) = self.property_names.get(name) {
@@ -261,12 +274,15 @@ mod tests {
         transform_object_expressions(&mut parsed_program.program);
         transform_rename_properties(
             &mut parsed_program.program,
-            true,
-            mode,
-            IdentifierNamesGeneratorKind::Hexadecimal,
-            "",
-            &[],
-            reserved_names,
+            RenamePropertiesTransformOptions {
+                enabled: true,
+                mode,
+                generator_kind: IdentifierNamesGeneratorKind::Hexadecimal,
+                identifiers_prefix: "",
+                identifiers_dictionary: &[],
+                reserved_names,
+                identifier_names_cache_storage: None,
+            },
         );
         generate_code(&parsed_program.program, parsed_program.source_map, true)
             .expect("code should generate")

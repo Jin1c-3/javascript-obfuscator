@@ -24,8 +24,13 @@ pub mod variable_declarations_merge;
 use swc_ecma_ast::Program;
 
 use crate::options::{Options, StringArrayEncoding};
+use crate::storages::IdentifierNamesCacheStorage;
 
-pub fn apply_transforms(program: &mut Program, options: &Options) {
+pub fn apply_transforms(
+    program: &mut Program,
+    options: &Options,
+    identifier_names_cache_storage: Option<&mut IdentifierNamesCacheStorage>,
+) {
     console_output::transform_console_output(
         program,
         options.disable_console_output.unwrap_or(false),
@@ -56,12 +61,15 @@ pub fn apply_transforms(program: &mut Program, options: &Options) {
     );
     rename_properties::transform_rename_properties(
         program,
-        options.rename_properties.unwrap_or(false),
-        options.rename_properties_mode.as_deref(),
-        options.identifier_names_generator.unwrap_or_default(),
-        options.identifiers_prefix.as_deref().unwrap_or(""),
-        options.identifiers_dictionary.as_deref().unwrap_or(&[]),
-        options.reserved_names.as_deref().unwrap_or(&[]),
+        rename_properties::RenamePropertiesTransformOptions {
+            enabled: options.rename_properties.unwrap_or(false),
+            mode: options.rename_properties_mode.as_deref(),
+            generator_kind: options.identifier_names_generator.unwrap_or_default(),
+            identifiers_prefix: options.identifiers_prefix.as_deref().unwrap_or(""),
+            identifiers_dictionary: options.identifiers_dictionary.as_deref().unwrap_or(&[]),
+            reserved_names: options.reserved_names.as_deref().unwrap_or(&[]),
+            identifier_names_cache_storage,
+        },
     );
     split_strings::transform_split_strings(
         program,
