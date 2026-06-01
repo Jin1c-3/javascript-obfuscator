@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 use crate::diagnostics::ObfuscatorResult;
 use crate::options::{ObfuscationResult, Options, Preset};
@@ -32,30 +32,170 @@ pub fn obfuscate_multiple(
 
 pub fn get_options_by_preset(preset: Preset) -> Value {
     match preset {
-        Preset::Default => json!({
-            "compact": true,
-            "stringArray": true,
-            "renameGlobals": false
-        }),
-        Preset::LowObfuscation => json!({
-            "compact": true,
-            "stringArray": true,
-            "renameGlobals": false
-        }),
-        Preset::MediumObfuscation => json!({
-            "compact": true,
-            "stringArray": true,
-            "renameGlobals": false,
-            "controlFlowFlattening": true
-        }),
-        Preset::HighObfuscation => json!({
-            "compact": true,
-            "stringArray": true,
-            "renameGlobals": false,
-            "controlFlowFlattening": true,
-            "deadCodeInjection": true
-        }),
+        Preset::Default => Value::Object(default_preset_options()),
+        Preset::LowObfuscation => preset_with_overrides(
+            default_preset_options(),
+            [
+                ("disableConsoleOutput", json!(true)),
+                ("optionsPreset", json!("low-obfuscation")),
+                ("stringArrayRotate", json!(true)),
+                ("selfDefending", json!(true)),
+                ("simplify", json!(true)),
+                ("stringArrayCallsTransform", json!(false)),
+                ("stringArrayCallsTransformThreshold", json!(0)),
+                ("stringArrayShuffle", json!(true)),
+            ],
+        ),
+        Preset::MediumObfuscation => preset_with_overrides(
+            low_obfuscation_preset_options(),
+            [
+                ("controlFlowFlattening", json!(true)),
+                ("deadCodeInjection", json!(true)),
+                ("numbersToExpressions", json!(true)),
+                ("optionsPreset", json!("medium-obfuscation")),
+                ("splitStrings", json!(true)),
+                ("splitStringsChunkLength", json!(10)),
+                ("stringArrayCallsTransformThreshold", json!(0.75)),
+                ("stringArrayEncoding", json!(["base64"])),
+                ("stringArrayWrappersCount", json!(2)),
+                ("stringArrayWrappersParametersMaxCount", json!(4)),
+                ("stringArrayWrappersType", json!("function")),
+                ("transformObjectKeys", json!(true)),
+            ],
+        ),
+        Preset::HighObfuscation => preset_with_overrides(
+            medium_obfuscation_preset_options(),
+            [
+                ("controlFlowFlatteningThreshold", json!(1)),
+                ("deadCodeInjectionThreshold", json!(1)),
+                ("debugProtection", json!(true)),
+                ("debugProtectionInterval", json!(4000)),
+                ("optionsPreset", json!("high-obfuscation")),
+                ("splitStringsChunkLength", json!(5)),
+                ("stringArrayCallsTransformThreshold", json!(1)),
+                ("stringArrayEncoding", json!(["rc4"])),
+                ("stringArrayWrappersCount", json!(5)),
+                ("stringArrayWrappersParametersMaxCount", json!(5)),
+                ("stringArrayThreshold", json!(1)),
+            ],
+        ),
     }
+}
+
+fn low_obfuscation_preset_options() -> Map<String, Value> {
+    preset_object(preset_with_overrides(
+        default_preset_options(),
+        [
+            ("disableConsoleOutput", json!(true)),
+            ("optionsPreset", json!("low-obfuscation")),
+            ("stringArrayRotate", json!(true)),
+            ("selfDefending", json!(true)),
+            ("simplify", json!(true)),
+            ("stringArrayCallsTransform", json!(false)),
+            ("stringArrayCallsTransformThreshold", json!(0)),
+            ("stringArrayShuffle", json!(true)),
+        ],
+    ))
+}
+
+fn medium_obfuscation_preset_options() -> Map<String, Value> {
+    preset_object(preset_with_overrides(
+        low_obfuscation_preset_options(),
+        [
+            ("controlFlowFlattening", json!(true)),
+            ("deadCodeInjection", json!(true)),
+            ("numbersToExpressions", json!(true)),
+            ("optionsPreset", json!("medium-obfuscation")),
+            ("splitStrings", json!(true)),
+            ("splitStringsChunkLength", json!(10)),
+            ("stringArrayCallsTransformThreshold", json!(0.75)),
+            ("stringArrayEncoding", json!(["base64"])),
+            ("stringArrayWrappersCount", json!(2)),
+            ("stringArrayWrappersParametersMaxCount", json!(4)),
+            ("stringArrayWrappersType", json!("function")),
+            ("transformObjectKeys", json!(true)),
+        ],
+    ))
+}
+
+fn preset_object(value: Value) -> Map<String, Value> {
+    match value {
+        Value::Object(object) => object,
+        _ => unreachable!("preset builders should always return an object"),
+    }
+}
+
+fn preset_with_overrides<const N: usize>(
+    mut preset: Map<String, Value>,
+    overrides: [(&str, Value); N],
+) -> Value {
+    for (key, value) in overrides {
+        preset.insert(key.to_string(), value);
+    }
+
+    Value::Object(preset)
+}
+
+fn default_preset_options() -> Map<String, Value> {
+    [
+        ("compact", json!(true)),
+        ("config", json!("")),
+        ("controlFlowFlattening", json!(false)),
+        ("controlFlowFlatteningThreshold", json!(0.75)),
+        ("deadCodeInjection", json!(false)),
+        ("deadCodeInjectionThreshold", json!(0.4)),
+        ("debugProtection", json!(false)),
+        ("debugProtectionInterval", json!(0)),
+        ("disableConsoleOutput", json!(false)),
+        ("domainLock", json!([])),
+        ("domainLockRedirectUrl", json!("about:blank")),
+        ("exclude", json!([])),
+        ("forceTransformStrings", json!([])),
+        ("identifierNamesCache", Value::Null),
+        ("identifierNamesGenerator", json!("hexadecimal")),
+        ("identifiersPrefix", json!("")),
+        ("identifiersDictionary", json!([])),
+        ("ignoreImports", json!(false)),
+        ("inputFileName", json!("")),
+        ("log", json!(false)),
+        ("numbersToExpressions", json!(false)),
+        ("optionsPreset", json!("default")),
+        ("renameGlobals", json!(false)),
+        ("renameProperties", json!(false)),
+        ("renamePropertiesMode", json!("safe")),
+        ("reservedNames", json!([])),
+        ("reservedStrings", json!([])),
+        ("stringArrayRotate", json!(true)),
+        ("seed", json!(0)),
+        ("selfDefending", json!(false)),
+        ("stringArrayShuffle", json!(true)),
+        ("simplify", json!(true)),
+        ("sourceMap", json!(false)),
+        ("sourceMapBaseUrl", json!("")),
+        ("sourceMapFileName", json!("")),
+        ("sourceMapMode", json!("separate")),
+        ("sourceMapSourcesMode", json!("sources-content")),
+        ("splitStrings", json!(false)),
+        ("splitStringsChunkLength", json!(10)),
+        ("stringArray", json!(true)),
+        ("stringArrayCallsTransform", json!(false)),
+        ("stringArrayCallsTransformThreshold", json!(0.5)),
+        ("stringArrayEncoding", json!(["none"])),
+        ("stringArrayIndexesType", json!(["hexadecimal-number"])),
+        ("stringArrayIndexShift", json!(true)),
+        ("stringArrayWrappersChainedCalls", json!(true)),
+        ("stringArrayWrappersCount", json!(1)),
+        ("stringArrayWrappersParametersMaxCount", json!(2)),
+        ("stringArrayWrappersType", json!("variable")),
+        ("stringArrayThreshold", json!(0.75)),
+        ("target", json!("browser")),
+        ("transformObjectKeys", json!(false)),
+        ("propertyBracketing", json!(true)),
+        ("unicodeEscapeSequence", json!(false)),
+    ]
+    .into_iter()
+    .map(|(key, value)| (key.to_string(), value))
+    .collect()
 }
 
 #[cfg(test)]
@@ -120,6 +260,52 @@ mod tests {
         assert!(result.contains_key("second.js"));
         assert!(result["first.js"].code.contains("first"));
         assert!(result["second.js"].code.contains("second"));
+    }
+
+    #[test]
+    fn options_preset_default_matches_typescript_option_surface() {
+        let preset = get_options_by_preset(Preset::Default);
+        let preset_object = preset.as_object().expect("preset should be an object");
+
+        assert!(
+            preset_object.len() >= 50,
+            "preset should expose the broad TypeScript option surface: {preset}"
+        );
+        assert_eq!(preset["optionsPreset"], json!("default"));
+        assert_eq!(preset["identifierNamesGenerator"], json!("hexadecimal"));
+        assert_eq!(preset["stringArray"], json!(true));
+        assert_eq!(preset["stringArrayRotate"], json!(true));
+        assert_eq!(preset["stringArrayShuffle"], json!(true));
+        assert_eq!(preset["stringArrayEncoding"], json!(["none"]));
+        assert_eq!(preset["stringArrayIndexShift"], json!(true));
+        assert_eq!(preset["stringArrayThreshold"], json!(0.75));
+        assert_eq!(preset["target"], json!("browser"));
+        assert_eq!(preset["propertyBracketing"], json!(true));
+    }
+
+    #[test]
+    fn options_preset_low_medium_and_high_apply_typescript_overrides() {
+        let low = get_options_by_preset(Preset::LowObfuscation);
+        assert_eq!(low["optionsPreset"], json!("low-obfuscation"));
+        assert_eq!(low["disableConsoleOutput"], json!(true));
+        assert_eq!(low["selfDefending"], json!(true));
+        assert_eq!(low["stringArrayCallsTransformThreshold"], json!(0));
+
+        let medium = get_options_by_preset(Preset::MediumObfuscation);
+        assert_eq!(medium["optionsPreset"], json!("medium-obfuscation"));
+        assert_eq!(medium["controlFlowFlattening"], json!(true));
+        assert_eq!(medium["deadCodeInjection"], json!(true));
+        assert_eq!(medium["stringArrayEncoding"], json!(["base64"]));
+        assert_eq!(medium["stringArrayWrappersType"], json!("function"));
+        assert_eq!(medium["transformObjectKeys"], json!(true));
+
+        let high = get_options_by_preset(Preset::HighObfuscation);
+        assert_eq!(high["optionsPreset"], json!("high-obfuscation"));
+        assert_eq!(high["debugProtection"], json!(true));
+        assert_eq!(high["debugProtectionInterval"], json!(4000));
+        assert_eq!(high["stringArrayEncoding"], json!(["rc4"]));
+        assert_eq!(high["stringArrayWrappersCount"], json!(5));
+        assert_eq!(high["stringArrayThreshold"], json!(1));
     }
 
     #[test]
