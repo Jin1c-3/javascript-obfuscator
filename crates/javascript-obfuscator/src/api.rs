@@ -767,6 +767,36 @@ mod tests {
     }
 
     #[test]
+    fn obfuscate_keeps_require_string_when_split_strings_ignore_imports_enabled() {
+        let result = obfuscate(
+            "const foo = require('./abcdef'); const bar = './ghijkl';",
+            Options {
+                compact: Some(true),
+                ignore_imports: Some(true),
+                string_array: Some(false),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                split_strings: Some(true),
+                split_strings_chunk_length: Some(3),
+                unicode_escape_sequence: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(
+            result.code.contains("require('./abcdef')"),
+            "{}",
+            result.code
+        );
+        assert!(
+            result.code.contains("const bar='./g'+'hij'+'kl';"),
+            "{}",
+            result.code
+        );
+    }
+
+    #[test]
     fn obfuscate_aliases_export_specifier_when_rename_globals_enabled() {
         let result = obfuscate(
             "const foo = 1; export {foo};",

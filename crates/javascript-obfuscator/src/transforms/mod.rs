@@ -50,6 +50,7 @@ pub fn apply_transforms(program: &mut Program, options: &Options) {
         options.split_strings.unwrap_or(false),
         options.split_strings_chunk_length.unwrap_or(10),
         options.reserved_strings.as_deref().unwrap_or(&[]),
+        options.ignore_imports.unwrap_or(false),
     );
     member_expressions::transform_member_expressions(
         program,

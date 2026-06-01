@@ -1,6 +1,6 @@
 use regex::Regex;
 use swc_common::DUMMY_SP;
-use swc_ecma_ast::{BinExpr, BinaryOp, Expr, ExprStmt, Lit, Program, Str};
+use swc_ecma_ast::{BinExpr, BinaryOp, CallExpr, Callee, Expr, ExprStmt, Lit, Program, Str};
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 pub fn transform_split_strings(
@@ -8,6 +8,7 @@ pub fn transform_split_strings(
     enabled: bool,
     chunk_length: usize,
     reserved_strings: &[String],
+    ignore_imports: bool,
 ) {
     if !enabled || chunk_length == 0 {
         return;
@@ -16,12 +17,14 @@ pub fn transform_split_strings(
     program.visit_mut_with(&mut SplitStringTransform {
         chunk_length,
         reserved_string_patterns: compile_patterns(reserved_strings),
+        ignore_imports,
     });
 }
 
 struct SplitStringTransform {
     chunk_length: usize,
     reserved_string_patterns: Vec<Regex>,
+    ignore_imports: bool,
 }
 
 impl VisitMut for SplitStringTransform {
@@ -31,6 +34,14 @@ impl VisitMut for SplitStringTransform {
         }
 
         expression_statement.visit_mut_children_with(self);
+    }
+
+    fn visit_mut_call_expr(&mut self, call_expression: &mut CallExpr) {
+        if self.ignore_imports && is_ignored_import_call(call_expression) {
+            return;
+        }
+
+        call_expression.visit_mut_children_with(self);
     }
 
     fn visit_mut_expr(&mut self, expression: &mut Expr) {
@@ -66,6 +77,25 @@ fn compile_patterns(patterns: &[String]) -> Vec<Regex> {
         .iter()
         .filter_map(|pattern| Regex::new(pattern).ok())
         .collect()
+}
+
+fn is_ignored_import_call(call_expression: &CallExpr) -> bool {
+    is_dynamic_import_call(call_expression) || is_require_call(call_expression)
+}
+
+fn is_dynamic_import_call(call_expression: &CallExpr) -> bool {
+    matches!(call_expression.callee, Callee::Import(_))
+}
+
+fn is_require_call(call_expression: &CallExpr) -> bool {
+    let Callee::Expr(callee_expression) = &call_expression.callee else {
+        return false;
+    };
+    let Expr::Ident(identifier) = callee_expression.as_ref() else {
+        return false;
+    };
+
+    identifier.sym.as_ref() == "require"
 }
 
 fn transform_string_literal(string_literal: &Str, chunk_length: usize) -> Option<Expr> {
@@ -138,6 +168,7 @@ mod tests {
         enabled: bool,
         chunk_length: usize,
         reserved_strings: &[String],
+        ignore_imports: bool,
     ) -> String {
         let mut parsed_program = parse_program(source_code).expect("source should parse");
         transform_split_strings(
@@ -145,6 +176,7 @@ mod tests {
             enabled,
             chunk_length,
             reserved_strings,
+            ignore_imports,
         );
         generate_code(&parsed_program.program, parsed_program.source_map, true)
             .expect("code should generate")
@@ -152,28 +184,28 @@ mod tests {
 
     #[test]
     fn splits_string_literal_when_enabled() {
-        let code = transform("const value = 'abcdef';", true, 3, &[]);
+        let code = transform("const value = 'abcdef';", true, 3, &[], false);
 
         assert!(code.contains("const value='abc'+'def'"), "{code}");
     }
 
     #[test]
     fn keeps_string_literal_when_disabled() {
-        let code = transform("const value = 'abcdef';", false, 3, &[]);
+        let code = transform("const value = 'abcdef';", false, 3, &[], false);
 
         assert!(code.contains("const value='abcdef'"), "{code}");
     }
 
     #[test]
     fn keeps_string_literal_when_chunk_is_oversized() {
-        let code = transform("const value = 'abcdef';", true, 10, &[]);
+        let code = transform("const value = 'abcdef';", true, 10, &[], false);
 
         assert!(code.contains("const value='abcdef'"), "{code}");
     }
 
     #[test]
     fn preserves_directive_string_statement() {
-        let code = transform("'use strict'; const value = 'abcdef';", true, 3, &[]);
+        let code = transform("'use strict'; const value = 'abcdef';", true, 3, &[], false);
 
         assert!(code.contains("'use strict';"), "{code}");
         assert!(code.contains("const value='abc'+'def'"), "{code}");
@@ -187,6 +219,7 @@ mod tests {
             true,
             3,
             &reserved_strings,
+            false,
         );
 
         assert!(code.contains("const keep='please-keep-me';"), "{code}");
@@ -201,9 +234,38 @@ mod tests {
             true,
             3,
             &reserved_strings,
+            false,
         );
 
         assert!(code.contains("const foo='foo'+'foo';"), "{code}");
         assert!(code.contains("const bar='barbar';"), "{code}");
+    }
+
+    #[test]
+    fn keeps_require_string_when_split_strings_ignore_imports_enabled() {
+        let code = transform(
+            "const foo = require('./abcdef'); const bar = './ghijkl';",
+            true,
+            3,
+            &[],
+            true,
+        );
+
+        assert!(code.contains("require('./abcdef')"), "{code}");
+        assert!(code.contains("const bar='./g'+'hij'+'kl';"), "{code}");
+    }
+
+    #[test]
+    fn keeps_dynamic_import_string_when_split_strings_ignore_imports_enabled() {
+        let code = transform(
+            "const mod = import('./abcdef'); const bar = './ghijkl';",
+            true,
+            3,
+            &[],
+            true,
+        );
+
+        assert!(code.contains("import('./abcdef')"), "{code}");
+        assert!(code.contains("const bar='./g'+'hij'+'kl';"), "{code}");
     }
 }
