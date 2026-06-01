@@ -687,6 +687,103 @@ mod tests {
     }
 
     #[test]
+    fn obfuscate_control_flow_flattening_flattens_block_and_preserves_runtime() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "controlFlowFlattening": true,
+            "controlFlowFlatteningThreshold": 1,
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "simplify": false,
+            "stringArray": false,
+            "unicodeEscapeSequence": false
+        }))
+        .expect("control flow flattening options should deserialize");
+        let result = obfuscate(
+            "globalThis.trace = []; function run(){ trace.push('a'); trace.push('b'); trace.push('c'); trace.push('d'); trace.push('e'); } run();",
+            options,
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(
+            result.code.contains("_0xcontrolFlowIndex"),
+            "{}",
+            result.code
+        );
+        assert!(result.code.contains("switch"), "{}", result.code);
+        assert!(result.code.contains("continue"), "{}", result.code);
+
+        let output = run_node_source(&format!(
+            "const vm=require('node:vm');const sandbox={{trace:null}};vm.runInNewContext({},sandbox);console.log(sandbox.trace.join(','));",
+            serde_json::to_string(&result.code).expect("generated code should serialize")
+        ));
+
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "a,b,c,d,e\n");
+        assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    }
+
+    #[test]
+    fn obfuscate_control_flow_flattening_threshold_zero_does_not_flatten_block() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "controlFlowFlattening": true,
+            "controlFlowFlatteningThreshold": 0,
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "simplify": false,
+            "stringArray": false,
+            "unicodeEscapeSequence": false
+        }))
+        .expect("control flow flattening options should deserialize");
+        let result =
+            obfuscate(
+                "function run(){ trace.push('a'); trace.push('b'); trace.push('c'); trace.push('d'); trace.push('e'); }",
+                options,
+            )
+                .expect("obfuscation should succeed");
+
+        assert!(
+            !result.code.contains("_0xcontrolFlowIndex"),
+            "{}",
+            result.code
+        );
+        assert!(!result.code.contains("switch"), "{}", result.code);
+    }
+
+    #[test]
+    fn obfuscate_control_flow_flattening_false_does_not_flatten_block() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "controlFlowFlattening": false,
+            "controlFlowFlatteningThreshold": 1,
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "simplify": false,
+            "stringArray": false,
+            "unicodeEscapeSequence": false
+        }))
+        .expect("control flow flattening options should deserialize");
+        let result =
+            obfuscate(
+                "function run(){ trace.push('a'); trace.push('b'); trace.push('c'); trace.push('d'); trace.push('e'); }",
+                options,
+            )
+                .expect("obfuscation should succeed");
+
+        assert!(
+            !result.code.contains("_0xcontrolFlowIndex"),
+            "{}",
+            result.code
+        );
+        assert!(!result.code.contains("switch"), "{}", result.code);
+    }
+
+    #[test]
     fn obfuscate_multiple_preserves_keys() {
         let mut input = BTreeMap::new();
         input.insert("first.js".to_string(), "const first = 1;".to_string());

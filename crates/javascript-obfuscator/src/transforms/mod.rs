@@ -2,6 +2,7 @@ pub mod block_statement_simplify;
 pub mod boolean_literals;
 pub mod class_fields;
 pub mod console_output;
+pub mod control_flow_flattening;
 pub mod dead_code_injection;
 pub mod debug_protection;
 pub mod directive_placement;
@@ -55,6 +56,11 @@ pub fn apply_transforms(
         program,
         options.dead_code_injection.unwrap_or(false),
         options.dead_code_injection_threshold.unwrap_or(0.4),
+    );
+    control_flow_flattening::transform_control_flow_flattening(
+        program,
+        options.control_flow_flattening.unwrap_or(false),
+        options.control_flow_flattening_threshold.unwrap_or(0.75),
     );
     export_specifiers::transform_export_specifiers(
         program,

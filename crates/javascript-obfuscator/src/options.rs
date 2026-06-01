@@ -13,6 +13,10 @@ pub struct Options {
     #[serde(default)]
     pub compact: Option<bool>,
     #[serde(default)]
+    pub control_flow_flattening: Option<bool>,
+    #[serde(default)]
+    pub control_flow_flattening_threshold: Option<f64>,
+    #[serde(default)]
     pub dead_code_injection: Option<bool>,
     #[serde(default)]
     pub dead_code_injection_threshold: Option<f64>,
@@ -367,5 +371,23 @@ mod tests {
         assert_eq!(options.dead_code_injection_threshold, Some(0.4));
         assert_eq!(serialized_options["deadCodeInjection"], json!(true));
         assert_eq!(serialized_options["deadCodeInjectionThreshold"], json!(0.4));
+    }
+
+    #[test]
+    fn deserializes_control_flow_flattening_options_for_option_compatibility() {
+        let options: Options = serde_json::from_value(json!({
+            "controlFlowFlattening": true,
+            "controlFlowFlatteningThreshold": 0.75
+        }))
+        .expect("control flow flattening options should deserialize");
+        let serialized_options = serde_json::to_value(&options).expect("options should serialize");
+
+        assert_eq!(options.control_flow_flattening, Some(true));
+        assert_eq!(options.control_flow_flattening_threshold, Some(0.75));
+        assert_eq!(serialized_options["controlFlowFlattening"], json!(true));
+        assert_eq!(
+            serialized_options["controlFlowFlatteningThreshold"],
+            json!(0.75)
+        );
     }
 }
