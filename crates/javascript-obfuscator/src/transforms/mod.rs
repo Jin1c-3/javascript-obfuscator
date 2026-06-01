@@ -1,6 +1,7 @@
 pub mod block_statement_simplify;
 pub mod boolean_literals;
 pub mod class_fields;
+pub mod console_output;
 pub mod directive_placement;
 pub mod escape_sequences;
 pub mod eval_call_expressions;
@@ -23,6 +24,10 @@ use swc_ecma_ast::Program;
 use crate::options::{Options, StringArrayEncoding};
 
 pub fn apply_transforms(program: &mut Program, options: &Options) {
+    console_output::transform_console_output(
+        program,
+        options.disable_console_output.unwrap_or(false),
+    );
     export_specifiers::transform_export_specifiers(
         program,
         options.rename_globals.unwrap_or(false),

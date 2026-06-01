@@ -200,9 +200,17 @@ fn default_preset_options() -> Map<String, Value> {
 
 #[cfg(test)]
 mod tests {
-    use std::process::Command;
+    use std::process::{Command, Output};
 
     use super::*;
+
+    fn run_node_source(source_code: &str) -> Output {
+        Command::new("node")
+            .arg("-e")
+            .arg(source_code)
+            .output()
+            .expect("node should execute generated code")
+    }
 
     #[test]
     fn obfuscate_generates_code_from_parsed_ast() {
@@ -245,6 +253,82 @@ mod tests {
         let error = obfuscate("const =", Options::default()).expect_err("parse should fail");
 
         assert!(error.to_string().contains("JavaScript parse error"));
+    }
+
+    #[test]
+    fn obfuscate_disable_console_output_suppresses_console_methods_at_runtime() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "disableConsoleOutput": true,
+            "propertyBracketing": true,
+            "renameGlobals": false,
+            "simplify": true,
+            "stringArray": true,
+            "stringArrayIndexShift": true,
+            "stringArrayRotate": true,
+            "stringArrayShuffle": true,
+            "unicodeEscapeSequence": true
+        }))
+        .expect("disable console output options should deserialize");
+        let result = obfuscate(
+            "'use strict'; function strictThis(){ return this; } if (strictThis() !== undefined) { throw new Error('strict mode changed'); } console.log('log'); console.warn('warn'); console.info('info'); console.error('error'); console.exception('exception'); console.table(['table']); console.trace('trace'); console.log.toString(); console.log.bind(console);",
+            options,
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(
+            result.code.starts_with("'use strict';"),
+            "{code}",
+            code = result.code
+        );
+
+        let output = run_node_source(&result.code);
+
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+        assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+
+        let missing_console_output = run_node_source(&format!(
+            "require('node:vm').runInNewContext({}, {{}});",
+            serde_json::to_string(&result.code).expect("generated code should serialize")
+        ));
+
+        assert!(
+            missing_console_output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&missing_console_output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&missing_console_output.stdout), "");
+        assert_eq!(String::from_utf8_lossy(&missing_console_output.stderr), "");
+    }
+
+    #[test]
+    fn obfuscate_disable_console_output_false_preserves_console_methods_at_runtime() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "disableConsoleOutput": false,
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "stringArray": false,
+            "unicodeEscapeSequence": false
+        }))
+        .expect("disable console output options should deserialize");
+        let result =
+            obfuscate("console.log('visible');", options).expect("obfuscation should succeed");
+
+        let output = run_node_source(&result.code);
+
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "visible\n");
+        assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     }
 
     #[test]

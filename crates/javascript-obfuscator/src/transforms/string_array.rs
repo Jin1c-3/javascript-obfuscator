@@ -302,14 +302,21 @@ fn insert_string_array_declarations(
 
     match program {
         Program::Script(script) => {
-            script.body.splice(0..0, statements);
+            let insert_index = first_non_directive_statement_index(&script.body);
+
+            script.body.splice(insert_index..insert_index, statements);
         }
         Program::Module(module) => {
-            let insert_index = module
+            let first_non_import_index = module
                 .body
                 .iter()
                 .position(|item| !matches!(item, ModuleItem::ModuleDecl(ModuleDecl::Import(_))))
                 .unwrap_or(module.body.len());
+            let directive_count = module.body[first_non_import_index..]
+                .iter()
+                .take_while(|item| matches!(item, ModuleItem::Stmt(statement) if is_directive_statement(statement)))
+                .count();
+            let insert_index = first_non_import_index + directive_count;
 
             module.body.splice(
                 insert_index..insert_index,
@@ -317,6 +324,21 @@ fn insert_string_array_declarations(
             );
         }
     }
+}
+
+fn first_non_directive_statement_index(statements: &[Stmt]) -> usize {
+    statements
+        .iter()
+        .position(|statement| !is_directive_statement(statement))
+        .unwrap_or(statements.len())
+}
+
+fn is_directive_statement(statement: &Stmt) -> bool {
+    matches!(
+        statement,
+        Stmt::Expr(expression_statement)
+            if matches!(expression_statement.expr.as_ref(), Expr::Lit(Lit::Str(_)))
+    )
 }
 
 fn create_storage_statement(
@@ -831,6 +853,13 @@ mod tests {
             code.contains("const value=_0x0[0x0];console.log(_0x0[0x0]);"),
             "{code}"
         );
+    }
+
+    #[test]
+    fn inserts_string_array_declarations_after_directives() {
+        let code = transform("'use strict'; const value = 'test';", true, &[], false);
+
+        assert!(code.starts_with("'use strict';const _0x0="), "{code}");
     }
 
     #[test]
