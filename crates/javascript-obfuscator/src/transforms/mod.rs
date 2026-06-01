@@ -2,6 +2,7 @@ pub mod block_statement_simplify;
 pub mod boolean_literals;
 pub mod class_fields;
 pub mod console_output;
+pub mod dead_code_injection;
 pub mod debug_protection;
 pub mod directive_placement;
 pub mod domain_lock;
@@ -49,6 +50,11 @@ pub fn apply_transforms(
             .domain_lock_redirect_url
             .as_deref()
             .unwrap_or("about:blank"),
+    );
+    dead_code_injection::transform_dead_code_injection(
+        program,
+        options.dead_code_injection.unwrap_or(false),
+        options.dead_code_injection_threshold.unwrap_or(0.4),
     );
     export_specifiers::transform_export_specifiers(
         program,

@@ -13,6 +13,10 @@ pub struct Options {
     #[serde(default)]
     pub compact: Option<bool>,
     #[serde(default)]
+    pub dead_code_injection: Option<bool>,
+    #[serde(default)]
+    pub dead_code_injection_threshold: Option<f64>,
+    #[serde(default)]
     pub numbers_to_expressions: Option<bool>,
     #[serde(default)]
     pub simplify: Option<bool>,
@@ -348,5 +352,20 @@ mod tests {
         assert_eq!(options.debug_protection_interval, Some(4000));
         assert_eq!(serialized_options["debugProtection"], json!(true));
         assert_eq!(serialized_options["debugProtectionInterval"], json!(4000));
+    }
+
+    #[test]
+    fn deserializes_dead_code_injection_options_for_option_compatibility() {
+        let options: Options = serde_json::from_value(json!({
+            "deadCodeInjection": true,
+            "deadCodeInjectionThreshold": 0.4
+        }))
+        .expect("dead code injection options should deserialize");
+        let serialized_options = serde_json::to_value(&options).expect("options should serialize");
+
+        assert_eq!(options.dead_code_injection, Some(true));
+        assert_eq!(options.dead_code_injection_threshold, Some(0.4));
+        assert_eq!(serialized_options["deadCodeInjection"], json!(true));
+        assert_eq!(serialized_options["deadCodeInjectionThreshold"], json!(0.4));
     }
 }

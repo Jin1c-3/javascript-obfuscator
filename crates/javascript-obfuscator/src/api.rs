@@ -596,6 +596,97 @@ mod tests {
     }
 
     #[test]
+    fn obfuscate_dead_code_injection_adds_unreachable_block_and_preserves_runtime() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "deadCodeInjection": true,
+            "deadCodeInjectionThreshold": 1,
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "stringArray": false,
+            "unicodeEscapeSequence": false
+        }))
+        .expect("dead code injection options should deserialize");
+        let result =
+            obfuscate("globalThis.result = 'ran';", options).expect("obfuscation should succeed");
+
+        assert!(
+            result.code.contains("_0xdeadCodeInjection"),
+            "{}",
+            result.code
+        );
+        assert!(
+            result
+                .code
+                .find("_0xdeadCodeInjection")
+                .expect("dead code should be present")
+                < result
+                    .code
+                    .find("globalThis.result")
+                    .expect("user code should be present"),
+            "{}",
+            result.code
+        );
+
+        let output = run_node_source(&format!(
+            "const vm=require('node:vm');const sandbox={{result:null}};vm.runInNewContext({},sandbox);console.log(sandbox.result);",
+            serde_json::to_string(&result.code).expect("generated code should serialize")
+        ));
+
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "ran\n");
+        assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    }
+
+    #[test]
+    fn obfuscate_dead_code_injection_threshold_zero_does_not_insert_block() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "deadCodeInjection": true,
+            "deadCodeInjectionThreshold": 0,
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "stringArray": false,
+            "unicodeEscapeSequence": false
+        }))
+        .expect("dead code injection options should deserialize");
+        let result =
+            obfuscate("globalThis.result = 'ran';", options).expect("obfuscation should succeed");
+
+        assert!(
+            !result.code.contains("_0xdeadCodeInjection"),
+            "{}",
+            result.code
+        );
+    }
+
+    #[test]
+    fn obfuscate_dead_code_injection_false_does_not_insert_block() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "deadCodeInjection": false,
+            "deadCodeInjectionThreshold": 1,
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "stringArray": false,
+            "unicodeEscapeSequence": false
+        }))
+        .expect("dead code injection options should deserialize");
+        let result =
+            obfuscate("globalThis.result = 'ran';", options).expect("obfuscation should succeed");
+
+        assert!(
+            !result.code.contains("_0xdeadCodeInjection"),
+            "{}",
+            result.code
+        );
+    }
+
+    #[test]
     fn obfuscate_multiple_preserves_keys() {
         let mut input = BTreeMap::new();
         input.insert("first.js".to_string(), "const first = 1;".to_string());
