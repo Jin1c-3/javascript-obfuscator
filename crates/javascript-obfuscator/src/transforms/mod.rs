@@ -103,7 +103,9 @@ fn select_supported_string_array_encoding(options: &Options) -> StringArrayEncod
             encodings.iter().copied().find(|encoding| {
                 matches!(
                     encoding,
-                    StringArrayEncoding::None | StringArrayEncoding::Base64
+                    StringArrayEncoding::None
+                        | StringArrayEncoding::Base64
+                        | StringArrayEncoding::Rc4
                 )
             })
         })

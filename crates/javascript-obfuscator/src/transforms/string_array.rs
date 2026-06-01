@@ -17,6 +17,7 @@ const ROTATION_AMOUNT: usize = 1;
 const SHIFTED_WRAPPER_NAME: &str = "_0x1";
 const BASE64_ALPHABET_SWAPPED: &[u8; 64] =
     b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/";
+const DEFAULT_RC4_KEY: &str = "rc4K";
 
 pub struct StringArrayTransformOptions<'a> {
     pub enabled: bool,
@@ -85,10 +86,16 @@ pub fn transform_string_array(program: &mut Program, options: StringArrayTransfo
     insert_string_array_declarations(program, storage_name, values, options.index_shift, encoding);
 }
 
+#[derive(Clone)]
+struct StringArrayValue {
+    encoded_value: String,
+    decode_key: Option<&'static str>,
+}
+
 struct StringArrayTransform<'a> {
     storage_name: &'static str,
     indexes_by_value: BTreeMap<String, usize>,
-    values: Vec<String>,
+    values: Vec<StringArrayValue>,
     index_type: StringArrayIndexesType,
     encoding: StringArrayEncoding,
     index_shift_enabled: bool,
@@ -125,28 +132,30 @@ impl VisitMut for StringArrayTransform<'_> {
             return;
         }
 
-        let index = self.get_or_insert_value(value);
+        let (index, decode_key) = self.get_or_insert_value(value);
         *expression = create_string_array_reference_expression(
             self.storage_name,
             index,
             self.index_type,
             self.encoding,
             self.index_shift_enabled,
+            decode_key,
         );
     }
 }
 
 impl StringArrayTransform<'_> {
-    fn get_or_insert_value(&mut self, value: String) -> usize {
+    fn get_or_insert_value(&mut self, value: String) -> (usize, Option<&'static str>) {
         if let Some(index) = self.indexes_by_value.get(&value) {
-            return *index;
+            return (*index, self.values[*index].decode_key);
         }
 
         let index = self.values.len();
-        self.values
-            .push(encode_string_array_value(&value, self.encoding));
+        let string_array_value = encode_string_array_value(&value, self.encoding);
+        let decode_key = string_array_value.decode_key;
+        self.values.push(string_array_value);
         self.indexes_by_value.insert(value, index);
-        index
+        (index, decode_key)
     }
 }
 
@@ -226,7 +235,7 @@ impl StringArrayIndexRemapTransform<'_> {
     }
 }
 
-fn reverse_string_array_values(values: &mut [String]) -> Vec<usize> {
+fn reverse_string_array_values(values: &mut [StringArrayValue]) -> Vec<usize> {
     let length = values.len();
     let index_remap = (0..length).map(|index| length - index - 1).collect();
     values.reverse();
@@ -234,7 +243,10 @@ fn reverse_string_array_values(values: &mut [String]) -> Vec<usize> {
     index_remap
 }
 
-fn rotate_string_array_values(values: &mut [String], rotation_amount: usize) -> Vec<usize> {
+fn rotate_string_array_values(
+    values: &mut [StringArrayValue],
+    rotation_amount: usize,
+) -> Vec<usize> {
     let length = values.len();
     if length == 0 {
         return Vec::new();
@@ -272,7 +284,7 @@ fn remap_string_array_indexes(
 fn insert_string_array_declarations(
     program: &mut Program,
     storage_name: &str,
-    values: Vec<String>,
+    values: Vec<StringArrayValue>,
     index_shift_enabled: bool,
     encoding: StringArrayEncoding,
 ) {
@@ -307,7 +319,10 @@ fn insert_string_array_declarations(
     }
 }
 
-fn create_storage_statement(storage_name: &str, values: Vec<String>) -> swc_ecma_ast::Stmt {
+fn create_storage_statement(
+    storage_name: &str,
+    values: Vec<StringArrayValue>,
+) -> swc_ecma_ast::Stmt {
     swc_ecma_ast::Stmt::Decl(Decl::Var(Box::new(VarDecl {
         span: DUMMY_SP,
         ctxt: Default::default(),
@@ -323,7 +338,11 @@ fn create_storage_statement(storage_name: &str, values: Vec<String>) -> swc_ecma
                 span: DUMMY_SP,
                 elems: values
                     .into_iter()
-                    .map(|value| Some(create_expr_or_spread(create_string_literal(&value))))
+                    .map(|value| {
+                        Some(create_expr_or_spread(create_string_literal(
+                            &value.encoded_value,
+                        )))
+                    })
                     .collect(),
             }))),
             definite: false,
@@ -342,18 +361,38 @@ fn should_emit_string_array_wrapper(
     index_shift_enabled: bool,
     encoding: StringArrayEncoding,
 ) -> bool {
-    index_shift_enabled || matches!(encoding, StringArrayEncoding::Base64)
+    index_shift_enabled
+        || matches!(
+            encoding,
+            StringArrayEncoding::Base64 | StringArrayEncoding::Rc4
+        )
 }
 
-fn encode_string_array_value(value: &str, encoding: StringArrayEncoding) -> String {
+fn encode_string_array_value(value: &str, encoding: StringArrayEncoding) -> StringArrayValue {
     match encoding {
-        StringArrayEncoding::None | StringArrayEncoding::Rc4 => value.to_string(),
-        StringArrayEncoding::Base64 => encode_base64_swapped(value),
+        StringArrayEncoding::None => StringArrayValue {
+            encoded_value: value.to_string(),
+            decode_key: None,
+        },
+        StringArrayEncoding::Base64 => StringArrayValue {
+            encoded_value: encode_base64_swapped(value),
+            decode_key: None,
+        },
+        StringArrayEncoding::Rc4 => StringArrayValue {
+            encoded_value: encode_base64_swapped_bytes(&rc4_bytes(
+                value.as_bytes(),
+                DEFAULT_RC4_KEY,
+            )),
+            decode_key: Some(DEFAULT_RC4_KEY),
+        },
     }
 }
 
 fn encode_base64_swapped(value: &str) -> String {
-    let bytes = value.as_bytes();
+    encode_base64_swapped_bytes(value.as_bytes())
+}
+
+fn encode_base64_swapped_bytes(bytes: &[u8]) -> String {
     let mut encoded = String::with_capacity(bytes.len().div_ceil(3) * 4);
 
     for chunk in bytes.chunks(3) {
@@ -382,12 +421,43 @@ fn encode_base64_swapped(value: &str) -> String {
     encoded
 }
 
+fn rc4_bytes(input: &[u8], key: &str) -> Vec<u8> {
+    let key_bytes = key.as_bytes();
+    let mut state = [0_u8; 256];
+
+    for (index, value) in state.iter_mut().enumerate() {
+        *value = index as u8;
+    }
+
+    let mut j = 0_usize;
+    for i in 0..256 {
+        j = (j + state[i] as usize + key_bytes[i % key_bytes.len()] as usize) % 256;
+        state.swap(i, j);
+    }
+
+    let mut i = 0_usize;
+    j = 0;
+
+    input
+        .iter()
+        .map(|byte| {
+            i = (i + 1) % 256;
+            j = (j + state[i] as usize) % 256;
+            state.swap(i, j);
+            let key_stream_index = (state[i] as usize + state[j] as usize) % 256;
+
+            byte ^ state[key_stream_index]
+        })
+        .collect()
+}
+
 fn create_string_array_reference_expression(
     storage_name: &str,
     index: usize,
     index_type: StringArrayIndexesType,
     encoding: StringArrayEncoding,
     index_shift_enabled: bool,
+    decode_key: Option<&str>,
 ) -> Expr {
     if should_emit_string_array_wrapper(index_shift_enabled, encoding) {
         let wrapper_index = if index_shift_enabled {
@@ -400,6 +470,7 @@ fn create_string_array_reference_expression(
             SHIFTED_WRAPPER_NAME,
             wrapper_index,
             index_type,
+            decode_key,
         );
     }
 
@@ -410,14 +481,21 @@ fn create_string_array_call_expression(
     wrapper_name: &str,
     index: usize,
     index_type: StringArrayIndexesType,
+    decode_key: Option<&str>,
 ) -> Expr {
+    let mut args = vec![create_expr_or_spread(create_index_literal(
+        index, index_type,
+    ))];
+
+    if let Some(decode_key) = decode_key {
+        args.push(create_expr_or_spread(create_string_literal(decode_key)));
+    }
+
     Expr::Call(CallExpr {
         span: DUMMY_SP,
         ctxt: Default::default(),
         callee: Callee::Expr(Box::new(Expr::Ident(create_identifier(wrapper_name)))),
-        args: vec![create_expr_or_spread(create_index_literal(
-            index, index_type,
-        ))],
+        args,
         type_args: None,
     })
 }
@@ -479,10 +557,16 @@ fn create_string_array_wrapper_statement(
     encoding: StringArrayEncoding,
 ) -> Stmt {
     match encoding {
-        StringArrayEncoding::None | StringArrayEncoding::Rc4 => {
+        StringArrayEncoding::None => {
             create_index_shift_wrapper_statement(storage_name, wrapper_name, shift_amount)
         }
         StringArrayEncoding::Base64 => create_base64_wrapper_statement(
+            storage_name,
+            wrapper_name,
+            shift_amount,
+            index_shift_enabled,
+        ),
+        StringArrayEncoding::Rc4 => create_rc4_wrapper_statement(
             storage_name,
             wrapper_name,
             shift_amount,
@@ -521,6 +605,39 @@ fn create_base64_wrapper_statement(
                 ModuleItem::ModuleDecl(_) => None,
             })
             .expect("base64 wrapper should contain a statement"),
+    }
+}
+
+fn create_rc4_wrapper_statement(
+    storage_name: &str,
+    wrapper_name: &str,
+    shift_amount: usize,
+    index_shift_enabled: bool,
+) -> Stmt {
+    let index_expression = if index_shift_enabled {
+        format!("index-0x{shift_amount:x}")
+    } else {
+        "index".to_string()
+    };
+    let wrapper_source = format!(
+        "function {wrapper_name}(index,key){{let value={storage_name}[{index_expression}];const chars='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/=';let data='';for(let bc=0,bs,buffer,idx=0;buffer=value.charAt(idx++);~buffer&&(bs=bc%4?bs*64+buffer:buffer,bc++%4)?data+=String.fromCharCode(0xff&bs>>(-0x2*bc&0x6)):0){{buffer=chars.indexOf(buffer);}}let s=[],j=0,x,output='';let i;for(i=0;i<0x100;i++){{s[i]=i;}}for(i=0;i<0x100;i++){{j=(j+s[i]+key.charCodeAt(i%key.length))%0x100;x=s[i];s[i]=s[j];s[j]=x;}}i=0;j=0;for(let y=0;y<data.length;y++){{i=(i+0x1)%0x100;j=(j+s[i])%0x100;x=s[i];s[i]=s[j];s[j]=x;output+=String.fromCharCode(data.charCodeAt(y)^s[(s[i]+s[j])%0x100]);}}let tempEncodedString='';for(let k=0,length=output.length;k<length;k++){{tempEncodedString+='%'+('00'+output.charCodeAt(k).toString(0x10)).slice(-0x2);}}return decodeURIComponent(tempEncodedString);}}"
+    );
+    let parsed_program = parse_program(&wrapper_source).expect("rc4 wrapper should parse");
+
+    match parsed_program.program {
+        Program::Script(script) => script
+            .body
+            .into_iter()
+            .next()
+            .expect("rc4 wrapper should contain a statement"),
+        Program::Module(module) => module
+            .body
+            .into_iter()
+            .find_map(|item| match item {
+                ModuleItem::Stmt(statement) => Some(statement),
+                ModuleItem::ModuleDecl(_) => None,
+            })
+            .expect("rc4 wrapper should contain a statement"),
     }
 }
 
@@ -923,6 +1040,34 @@ mod tests {
         assert!(code.contains("function _0x1(index)"), "{code}");
         assert!(
             code.contains("const first=_0x1(0x1);const second=_0x1(0x0);"),
+            "{code}"
+        );
+    }
+
+    #[test]
+    fn remaps_rc4_wrapper_indexes_when_string_array_shuffle_is_enabled() {
+        let mut parsed_program = parse_program("const first = 'foo'; const second = 'bar';")
+            .expect("source should parse");
+        transform_string_array(
+            &mut parsed_program.program,
+            StringArrayTransformOptions {
+                enabled: true,
+                threshold: 1.0,
+                indexes_type: &[],
+                encoding: StringArrayEncoding::Rc4,
+                index_shift: false,
+                shuffle: true,
+                rotate: false,
+                reserved_strings: &[],
+                ignore_imports: false,
+            },
+        );
+        let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
+            .expect("code should generate");
+
+        assert!(code.contains("function _0x1(index,key)"), "{code}");
+        assert!(
+            code.contains("const first=_0x1(0x1,'rc4K');const second=_0x1(0x0,'rc4K');"),
             "{code}"
         );
     }

@@ -1245,7 +1245,7 @@ mod tests {
     }
 
     #[test]
-    fn obfuscate_keeps_rc4_string_array_encoding_compatible_without_implementing_it() {
+    fn obfuscate_uses_string_array_rc4_encoding_when_enabled() {
         let result = obfuscate(
             "const value = 'test';",
             Options {
@@ -1262,19 +1262,22 @@ mod tests {
         .expect("obfuscation should succeed");
 
         assert!(
-            result.code.contains("const _0x0=['test'];"),
+            result.code.contains("function _0x1(index,key)"),
             "{}",
             result.code
         );
+        assert!(result.code.contains("'rc4K'"), "{}", result.code);
+        assert!(result.code.contains("key.charCodeAt"), "{}", result.code);
         assert!(
-            result.code.contains("const value=_0x0[0x0];"),
+            result.code.contains("const value=_0x1(0x0,'rc4K');"),
             "{}",
             result.code
         );
+        assert!(!result.code.contains("['test']"), "{}", result.code);
     }
 
     #[test]
-    fn obfuscate_uses_supported_base64_encoding_after_unsupported_rc4_option() {
+    fn obfuscate_uses_first_supported_string_array_encoding() {
         let result = obfuscate(
             "const value = 'test';",
             Options {
@@ -1282,8 +1285,8 @@ mod tests {
                 string_array: Some(true),
                 string_array_threshold: Some(1.0),
                 string_array_encoding: Some(vec![
-                    crate::options::StringArrayEncoding::Rc4,
                     crate::options::StringArrayEncoding::Base64,
+                    crate::options::StringArrayEncoding::Rc4,
                 ]),
                 rename_globals: Some(false),
                 property_bracketing: Some(false),
@@ -1303,6 +1306,38 @@ mod tests {
             "{}",
             result.code
         );
+    }
+
+    #[test]
+    fn obfuscate_rc4_string_array_encoding_decodes_at_runtime() {
+        let result = obfuscate(
+            "console.log(['foo', 'bar', 'baz'].join('|'));",
+            Options {
+                compact: Some(true),
+                string_array: Some(true),
+                string_array_threshold: Some(1.0),
+                string_array_encoding: Some(vec![crate::options::StringArrayEncoding::Rc4]),
+                string_array_index_shift: Some(true),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                unicode_escape_sequence: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        let output = Command::new("node")
+            .arg("-e")
+            .arg(&result.code)
+            .output()
+            .expect("node should execute generated code");
+
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "foo|bar|baz\n");
     }
 
     #[test]
