@@ -75,6 +75,7 @@ pub fn apply_transforms(program: &mut Program, options: &Options) {
     string_array::transform_string_array(
         program,
         options.string_array.unwrap_or(false),
+        options.string_array_threshold.unwrap_or(1.0),
         options.reserved_strings.as_deref().unwrap_or(&[]),
         options.ignore_imports.unwrap_or(false),
     );

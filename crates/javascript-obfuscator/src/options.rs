@@ -17,6 +17,8 @@ pub struct Options {
     #[serde(default)]
     pub string_array: Option<bool>,
     #[serde(default)]
+    pub string_array_threshold: Option<f64>,
+    #[serde(default)]
     pub ignore_imports: Option<bool>,
     #[serde(default)]
     pub rename_globals: Option<bool>,

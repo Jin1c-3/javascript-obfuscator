@@ -11,10 +11,11 @@ use swc_ecma_visit::{VisitMut, VisitMutWith};
 pub fn transform_string_array(
     program: &mut Program,
     enabled: bool,
+    threshold: f64,
     reserved_strings: &[String],
     ignore_imports: bool,
 ) {
-    if !enabled {
+    if !enabled || threshold <= 0.0 {
         return;
     }
 
@@ -229,6 +230,7 @@ mod tests {
         transform_string_array(
             &mut parsed_program.program,
             enabled,
+            1.0,
             reserved_strings,
             ignore_imports,
         );
@@ -286,5 +288,17 @@ mod tests {
         assert!(code.contains("const _0x0=['./bar'];"), "{code}");
         assert!(code.contains("require('./foo')"), "{code}");
         assert!(code.contains("const bar=_0x0[0x0];"), "{code}");
+    }
+
+    #[test]
+    fn keeps_string_literals_when_threshold_is_zero() {
+        let mut parsed_program =
+            parse_program("const value = 'test';").expect("source should parse");
+        transform_string_array(&mut parsed_program.program, true, 0.0, &[], false);
+        let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
+            .expect("code should generate");
+
+        assert!(code.contains("const value='test';"), "{code}");
+        assert!(!code.contains("const _0x0=["), "{code}");
     }
 }
