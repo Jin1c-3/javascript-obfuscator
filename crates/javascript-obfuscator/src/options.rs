@@ -29,6 +29,8 @@ pub struct Options {
     #[serde(default)]
     pub string_array_rotate: Option<bool>,
     #[serde(default)]
+    pub force_transform_strings: Option<Vec<String>>,
+    #[serde(default)]
     pub ignore_imports: Option<bool>,
     #[serde(default)]
     pub rename_globals: Option<bool>,
@@ -145,6 +147,19 @@ mod tests {
         assert_eq!(
             options.identifier_names_generator,
             Some(IdentifierNamesGeneratorKind::KeepOriginal)
+        );
+    }
+
+    #[test]
+    fn deserializes_force_transform_strings_for_option_compatibility() {
+        let options: Options = serde_json::from_value(json!({
+            "forceTransformStrings": ["ar$"]
+        }))
+        .expect("force transform strings option should deserialize");
+
+        assert_eq!(
+            options.force_transform_strings,
+            Some(vec!["ar$".to_string()])
         );
     }
 }

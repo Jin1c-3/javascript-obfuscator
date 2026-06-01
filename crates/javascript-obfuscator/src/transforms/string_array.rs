@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use regex::Regex;
 use swc_common::DUMMY_SP;
 use swc_ecma_ast::{
     ArrayLit, BinExpr, BinaryOp, BindingIdent, BlockStmt, CallExpr, Callee, ComputedPropName, Decl,
@@ -28,22 +29,27 @@ pub struct StringArrayTransformOptions<'a> {
     pub shuffle: bool,
     pub rotate: bool,
     pub reserved_strings: &'a [String],
+    pub force_transform_strings: &'a [String],
     pub ignore_imports: bool,
 }
 
 pub fn transform_string_array(program: &mut Program, options: StringArrayTransformOptions<'_>) {
-    if !options.enabled || options.threshold <= 0.0 {
+    if !options.enabled {
         return;
     }
 
+    let force_transform_patterns =
+        compile_force_transform_patterns(options.force_transform_strings);
     let mut transform = StringArrayTransform {
         storage_name: "_0x0",
         indexes_by_value: BTreeMap::new(),
         values: Vec::new(),
+        threshold: options.threshold,
         index_type: first_index_type(options.indexes_type),
         encoding: options.encoding,
         index_shift_enabled: options.index_shift,
         reserved_strings: options.reserved_strings,
+        force_transform_patterns,
         ignore_imports: options.ignore_imports,
     };
 
@@ -96,10 +102,12 @@ struct StringArrayTransform<'a> {
     storage_name: &'static str,
     indexes_by_value: BTreeMap<String, usize>,
     values: Vec<StringArrayValue>,
+    threshold: f64,
     index_type: StringArrayIndexesType,
     encoding: StringArrayEncoding,
     index_shift_enabled: bool,
     reserved_strings: &'a [String],
+    force_transform_patterns: Vec<Regex>,
     ignore_imports: bool,
 }
 
@@ -128,8 +136,17 @@ impl VisitMut for StringArrayTransform<'_> {
         };
 
         let value = string_literal.value.to_string_lossy().into_owned();
-        if is_reserved_string(&value, self.reserved_strings) {
-            return;
+        let is_force_transform_string =
+            is_force_transform_string(&value, &self.force_transform_patterns);
+
+        if !is_force_transform_string {
+            if self.threshold <= 0.0 {
+                return;
+            }
+
+            if is_reserved_string(&value, self.reserved_strings) {
+                return;
+            }
         }
 
         let (index, decode_key) = self.get_or_insert_value(value);
@@ -807,6 +824,19 @@ fn is_reserved_string(value: &str, reserved_strings: &[String]) -> bool {
         .any(|reserved_string| value.contains(reserved_string))
 }
 
+fn compile_force_transform_patterns(force_transform_strings: &[String]) -> Vec<Regex> {
+    force_transform_strings
+        .iter()
+        .filter_map(|force_transform_string| Regex::new(force_transform_string).ok())
+        .collect()
+}
+
+fn is_force_transform_string(value: &str, force_transform_patterns: &[Regex]) -> bool {
+    force_transform_patterns
+        .iter()
+        .any(|force_transform_pattern| force_transform_pattern.is_match(value))
+}
+
 #[cfg(test)]
 mod tests {
     use crate::codegen::generate_code;
@@ -832,6 +862,7 @@ mod tests {
                 shuffle: false,
                 rotate: false,
                 reserved_strings,
+                force_transform_strings: &[],
                 ignore_imports,
             },
         );
@@ -913,6 +944,7 @@ mod tests {
                 shuffle: false,
                 rotate: false,
                 reserved_strings: &[],
+                force_transform_strings: &[],
                 ignore_imports: false,
             },
         );
@@ -921,6 +953,63 @@ mod tests {
 
         assert!(code.contains("const value='test';"), "{code}");
         assert!(!code.contains("const _0x0=["), "{code}");
+    }
+
+    #[test]
+    fn force_transforms_matching_string_when_threshold_is_zero() {
+        let force_transform_strings = vec!["ar$".to_string()];
+        let mut parsed_program =
+            parse_program("const foo = 'foo'; const bar = 'bar';").expect("source should parse");
+        transform_string_array(
+            &mut parsed_program.program,
+            StringArrayTransformOptions {
+                enabled: true,
+                threshold: 0.0,
+                indexes_type: &[],
+                encoding: StringArrayEncoding::None,
+                index_shift: false,
+                shuffle: false,
+                rotate: false,
+                reserved_strings: &[],
+                force_transform_strings: &force_transform_strings,
+                ignore_imports: false,
+            },
+        );
+        let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
+            .expect("code should generate");
+
+        assert!(code.contains("const _0x0=['bar'];"), "{code}");
+        assert!(code.contains("const foo='foo';"), "{code}");
+        assert!(code.contains("const bar=_0x0[0x0];"), "{code}");
+    }
+
+    #[test]
+    fn force_transform_strings_take_priority_over_reserved_strings() {
+        let reserved_strings = vec!["bar".to_string()];
+        let force_transform_strings = vec!["bar".to_string()];
+        let mut parsed_program =
+            parse_program("const foo = 'foo'; const bar = 'bar';").expect("source should parse");
+        transform_string_array(
+            &mut parsed_program.program,
+            StringArrayTransformOptions {
+                enabled: true,
+                threshold: 0.0,
+                indexes_type: &[],
+                encoding: StringArrayEncoding::None,
+                index_shift: false,
+                shuffle: false,
+                rotate: false,
+                reserved_strings: &reserved_strings,
+                force_transform_strings: &force_transform_strings,
+                ignore_imports: false,
+            },
+        );
+        let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
+            .expect("code should generate");
+
+        assert!(code.contains("const _0x0=['bar'];"), "{code}");
+        assert!(code.contains("const foo='foo';"), "{code}");
+        assert!(code.contains("const bar=_0x0[0x0];"), "{code}");
     }
 
     #[test]
@@ -938,6 +1027,7 @@ mod tests {
                 shuffle: false,
                 rotate: false,
                 reserved_strings: &[],
+                force_transform_strings: &[],
                 ignore_imports: false,
             },
         );
@@ -962,6 +1052,7 @@ mod tests {
                 shuffle: false,
                 rotate: false,
                 reserved_strings: &[],
+                force_transform_strings: &[],
                 ignore_imports: false,
             },
         );
@@ -994,6 +1085,7 @@ mod tests {
                 shuffle: true,
                 rotate: false,
                 reserved_strings: &[],
+                force_transform_strings: &[],
                 ignore_imports: false,
             },
         );
@@ -1027,6 +1119,7 @@ mod tests {
                 shuffle: false,
                 rotate: true,
                 reserved_strings: &[],
+                force_transform_strings: &[],
                 ignore_imports: false,
             },
         );
@@ -1059,6 +1152,7 @@ mod tests {
                 shuffle: true,
                 rotate: false,
                 reserved_strings: &[],
+                force_transform_strings: &[],
                 ignore_imports: false,
             },
         );
@@ -1088,6 +1182,7 @@ mod tests {
                 shuffle: true,
                 rotate: false,
                 reserved_strings: &[],
+                force_transform_strings: &[],
                 ignore_imports: false,
             },
         );

@@ -1432,6 +1432,36 @@ mod tests {
     }
 
     #[test]
+    fn obfuscate_force_transforms_matching_string_when_threshold_is_zero() {
+        let result = obfuscate(
+            "const foo = 'foo'; const bar = 'bar';",
+            Options {
+                compact: Some(true),
+                string_array: Some(true),
+                string_array_threshold: Some(0.0),
+                force_transform_strings: Some(vec!["ar$".to_string()]),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                unicode_escape_sequence: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(
+            result.code.contains("const _0x0=['bar'];"),
+            "{}",
+            result.code
+        );
+        assert!(result.code.contains("const foo='foo';"), "{}", result.code);
+        assert!(
+            result.code.contains("const bar=_0x0[0x0];"),
+            "{}",
+            result.code
+        );
+    }
+
+    #[test]
     fn obfuscate_uses_hexadecimal_number_string_array_index_type() {
         let result = obfuscate(
             "const value = 'test';",

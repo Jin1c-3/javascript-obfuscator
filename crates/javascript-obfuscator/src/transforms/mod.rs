@@ -90,6 +90,7 @@ pub fn apply_transforms(program: &mut Program, options: &Options) {
             shuffle: options.string_array_shuffle.unwrap_or(false),
             rotate: options.string_array_rotate.unwrap_or(false),
             reserved_strings: options.reserved_strings.as_deref().unwrap_or(&[]),
+            force_transform_strings: options.force_transform_strings.as_deref().unwrap_or(&[]),
             ignore_imports: options.ignore_imports.unwrap_or(false),
         },
     );
