@@ -766,6 +766,39 @@ mod tests {
     }
 
     #[test]
+    fn obfuscate_transform_object_keys_return_object_when_enabled() {
+        let result = obfuscate(
+            "function getObject() { return {foo: 'bar', baz: 'bark'}; }",
+            Options {
+                compact: Some(true),
+                identifier_names_generator: Some(
+                    crate::generators::IdentifierNamesGeneratorKind::Hexadecimal,
+                ),
+                property_bracketing: Some(false),
+                rename_globals: Some(false),
+                simplify: Some(false),
+                string_array: Some(false),
+                transform_object_keys: Some(true),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(result.code.contains("var _0x0={};"), "{}", result.code);
+        assert!(
+            result.code.contains("_0x0['foo']='bar';"),
+            "{}",
+            result.code
+        );
+        assert!(
+            result.code.contains("_0x0['baz']='bark';"),
+            "{}",
+            result.code
+        );
+        assert!(result.code.contains("return _0x0;"), "{}", result.code);
+    }
+
+    #[test]
     fn obfuscate_transforms_class_method_identifier_key() {
         let result = obfuscate(
             "class Foo { bar() {} }",

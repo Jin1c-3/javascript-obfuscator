@@ -2,8 +2,8 @@ use swc_common::DUMMY_SP;
 use swc_ecma_ast::{
     AssignExpr, AssignOp, AssignTarget, BindingIdent, BlockStmt, ComputedPropName, Decl, Expr,
     ExprStmt, Ident, Lit, MemberExpr, MemberProp, ModuleItem, ObjectLit, Pat, Program, Prop,
-    PropName, PropOrSpread, SimpleAssignTarget, Stmt, Str, SwitchCase, VarDecl, VarDeclKind,
-    VarDeclarator,
+    PropName, PropOrSpread, ReturnStmt, SimpleAssignTarget, Stmt, Str, SwitchCase, VarDecl,
+    VarDeclKind, VarDeclarator,
 };
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
@@ -91,6 +91,7 @@ fn expand_statement(statement: Stmt, generator: &mut IdentifierNamesGenerator) -
         Stmt::Decl(Decl::Var(variable_declaration)) => {
             expand_variable_declaration(*variable_declaration, generator)
         }
+        Stmt::Return(return_statement) => expand_return_statement(return_statement, generator),
         statement => vec![statement],
     }
 }
@@ -122,6 +123,32 @@ fn expand_variable_declaration(
     statements
 }
 
+fn expand_return_statement(
+    mut return_statement: ReturnStmt,
+    generator: &mut IdentifierNamesGenerator,
+) -> Vec<Stmt> {
+    let Some(assignments) = extract_return_property_assignments(&return_statement) else {
+        return vec![Stmt::Return(return_statement)];
+    };
+
+    let temporary_name = generator.generate_next();
+    let mut statements = Vec::with_capacity(assignments.len() + 2);
+    statements.push(create_empty_object_statement(&temporary_name));
+
+    for (key, value) in assignments {
+        statements.push(create_property_assignment_statement(
+            &temporary_name,
+            &key,
+            value,
+        ));
+    }
+
+    return_statement.arg = Some(Box::new(Expr::Ident(create_identifier(&temporary_name))));
+    statements.push(Stmt::Return(return_statement));
+
+    statements
+}
+
 fn extract_property_assignments(variable_declaration: &VarDecl) -> Option<Vec<(String, Expr)>> {
     if variable_declaration.decls.len() != 1 {
         return None;
@@ -133,6 +160,16 @@ fn extract_property_assignments(variable_declaration: &VarDecl) -> Option<Vec<(S
     }
 
     let Expr::Object(object_lit) = declarator.init.as_deref()? else {
+        return None;
+    };
+
+    collect_key_value_properties(object_lit)
+}
+
+fn extract_return_property_assignments(
+    return_statement: &ReturnStmt,
+) -> Option<Vec<(String, Expr)>> {
+    let Expr::Object(object_lit) = return_statement.arg.as_deref()? else {
         return None;
     };
 
@@ -291,6 +328,32 @@ mod tests {
 
         assert!(
             code.contains("var object={'foo':'bar'},other={'baz':'bark'};"),
+            "{code}"
+        );
+    }
+
+    #[test]
+    fn transform_object_keys_return_object_when_enabled() {
+        let code = transform(
+            "function getObject() { return {foo: 'bar', baz: 'bark'}; }",
+            true,
+        );
+
+        assert!(code.contains("var _0x0={};"), "{code}");
+        assert!(code.contains("_0x0['foo']='bar';"), "{code}");
+        assert!(code.contains("_0x0['baz']='bark';"), "{code}");
+        assert!(code.contains("return _0x0;"), "{code}");
+    }
+
+    #[test]
+    fn keeps_return_object_with_spread_property() {
+        let code = transform(
+            "function getObject() { return {...source, foo: 'bar'}; }",
+            true,
+        );
+
+        assert!(
+            code.contains("function getObject(){return{...source,'foo':'bar'};}"),
             "{code}"
         );
     }
