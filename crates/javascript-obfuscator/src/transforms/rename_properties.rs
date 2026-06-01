@@ -7,11 +7,12 @@ use swc_ecma_ast::{
     AssignPat, AssignPatProp, Expr, IdentName, KeyValuePatProp, Lit, MemberExpr, MemberProp,
     ObjectPat, ObjectPatProp, Pat, Program, PropName, Str,
 };
-use swc_ecma_visit::{VisitMut, VisitMutWith};
+use swc_ecma_visit::{Visit, VisitMut, VisitMutWith, VisitWith};
 
 use crate::generators::{IdentifierNamesGenerator, IdentifierNamesGeneratorKind};
 
 const UNSAFE_MODE: &str = "unsafe";
+const SAFE_MODE: &str = "safe";
 const RESERVED_DOM_PROPERTY_NAMES_JSON: &str =
     include_str!("../../assets/ReservedDomProperties.json");
 static RESERVED_DOM_PROPERTY_NAMES: OnceLock<HashSet<String>> = OnceLock::new();
@@ -25,9 +26,20 @@ pub fn transform_rename_properties(
     identifiers_dictionary: &[String],
     reserved_names: &[String],
 ) {
-    if !enabled || mode != Some(UNSAFE_MODE) {
+    if !enabled {
         return;
     }
+
+    let mode = mode.unwrap_or(SAFE_MODE);
+    if mode != SAFE_MODE && mode != UNSAFE_MODE {
+        return;
+    }
+
+    let excluded_property_names = if mode == SAFE_MODE {
+        collect_auto_excluded_property_names(program)
+    } else {
+        HashSet::new()
+    };
 
     program.visit_mut_with(&mut RenamePropertiesTransform {
         generator: IdentifierNamesGenerator::new(
@@ -35,17 +47,52 @@ pub fn transform_rename_properties(
             identifiers_prefix,
             identifiers_dictionary.to_vec(),
         ),
+        excluded_property_names,
         generator_kind,
         property_names: HashMap::new(),
         reserved_name_patterns: compile_patterns(reserved_names),
     });
 }
 
+struct AutoExcludedPropertyNamesCollector {
+    excluded_property_names: HashSet<String>,
+}
+
 struct RenamePropertiesTransform {
     generator: IdentifierNamesGenerator,
+    excluded_property_names: HashSet<String>,
     generator_kind: IdentifierNamesGeneratorKind,
     property_names: HashMap<String, String>,
     reserved_name_patterns: Vec<Regex>,
+}
+
+impl Visit for AutoExcludedPropertyNamesCollector {
+    fn visit_member_prop(&mut self, member_prop: &MemberProp) {
+        match member_prop {
+            MemberProp::Computed(computed_property_name) => {
+                if !matches!(computed_property_name.expr.as_ref(), Expr::Lit(Lit::Str(_))) {
+                    computed_property_name.expr.visit_with(self);
+                }
+            }
+            MemberProp::Ident(_) | MemberProp::PrivateName(_) => {}
+        }
+    }
+
+    fn visit_prop_name(&mut self, property_name: &PropName) {
+        match property_name {
+            PropName::Computed(computed_property_name) => {
+                if !matches!(computed_property_name.expr.as_ref(), Expr::Lit(Lit::Str(_))) {
+                    computed_property_name.expr.visit_with(self);
+                }
+            }
+            PropName::Ident(_) | PropName::Str(_) | PropName::Num(_) | PropName::BigInt(_) => {}
+        }
+    }
+
+    fn visit_str(&mut self, string_literal: &Str) {
+        self.excluded_property_names
+            .insert(string_literal.value.to_string_lossy().into_owned());
+    }
 }
 
 impl VisitMut for RenamePropertiesTransform {
@@ -126,7 +173,8 @@ impl RenamePropertiesTransform {
     }
 
     fn should_keep_name(&self, name: &str) -> bool {
-        reserved_dom_property_names().contains(name)
+        self.excluded_property_names.contains(name)
+            || reserved_dom_property_names().contains(name)
             || self
                 .reserved_name_patterns
                 .iter()
@@ -154,6 +202,15 @@ impl RenamePropertiesTransform {
             value: Box::new(value),
         })
     }
+}
+
+fn collect_auto_excluded_property_names(program: &Program) -> HashSet<String> {
+    let mut collector = AutoExcludedPropertyNamesCollector {
+        excluded_property_names: HashSet::new(),
+    };
+    program.visit_with(&mut collector);
+
+    collector.excluded_property_names
 }
 
 fn reserved_dom_property_names() -> &'static HashSet<String> {
@@ -199,13 +256,13 @@ mod tests {
 
     use super::*;
 
-    fn transform(source_code: &str, reserved_names: &[String]) -> String {
+    fn transform(source_code: &str, mode: Option<&str>, reserved_names: &[String]) -> String {
         let mut parsed_program = parse_program(source_code).expect("source should parse");
         transform_object_expressions(&mut parsed_program.program);
         transform_rename_properties(
             &mut parsed_program.program,
             true,
-            Some(UNSAFE_MODE),
+            mode,
             IdentifierNamesGeneratorKind::Hexadecimal,
             "",
             &[],
@@ -217,7 +274,11 @@ mod tests {
 
     #[test]
     fn renames_object_keys_and_member_expressions_consistently() {
-        let code = transform("const value = {'foo': 1}; value.foo; value['foo'];", &[]);
+        let code = transform(
+            "const value = {'foo': 1}; value.foo; value['foo'];",
+            Some(UNSAFE_MODE),
+            &[],
+        );
 
         assert!(code.contains("const value={'_0x0':1};"), "{code}");
         assert!(code.contains("value._0x0;"), "{code}");
@@ -229,6 +290,7 @@ mod tests {
         let reserved_names = vec!["^keep$".to_string()];
         let code = transform(
             "const value = {'keep': 1, 'change': 2}; value.keep; value.change;",
+            Some(UNSAFE_MODE),
             &reserved_names,
         );
 
@@ -242,6 +304,7 @@ mod tests {
     fn keeps_reserved_dom_properties() {
         let code = transform(
             "const value = {'then': 1, 'custom': 2}; value.then; value.custom;",
+            Some(UNSAFE_MODE),
             &[],
         );
 
@@ -253,7 +316,11 @@ mod tests {
 
     #[test]
     fn skips_computed_non_string_members() {
-        let code = transform("const value = {'foo': 1}; value[foo];", &[]);
+        let code = transform(
+            "const value = {'foo': 1}; value[foo];",
+            Some(UNSAFE_MODE),
+            &[],
+        );
 
         assert!(code.contains("const value={'_0x0':1};"), "{code}");
         assert!(code.contains("value[foo];"), "{code}");
@@ -261,9 +328,53 @@ mod tests {
 
     #[test]
     fn renames_shorthand_object_pattern_properties() {
-        let code = transform("const value = {'foo': 1}; const {foo} = value;", &[]);
+        let code = transform(
+            "const value = {'foo': 1}; const {foo} = value;",
+            Some(UNSAFE_MODE),
+            &[],
+        );
 
         assert!(code.contains("const value={'_0x0':1};"), "{code}");
         assert!(code.contains("const{'_0x0':foo}=value;"), "{code}");
+    }
+
+    #[test]
+    fn safe_mode_excludes_ordinary_string_literals() {
+        let code = transform(
+            "const value = {'foo': 1, 'bar': 2}; const excluded = 'foo'; value.foo; value.bar;",
+            Some(SAFE_MODE),
+            &[],
+        );
+
+        assert!(code.contains("'foo':1"), "{code}");
+        assert!(code.contains("'_0x0':2"), "{code}");
+        assert!(code.contains("value.foo;"), "{code}");
+        assert!(code.contains("value._0x0;"), "{code}");
+    }
+
+    #[test]
+    fn safe_mode_renames_property_position_string_literals() {
+        let code = transform(
+            "const value = {'bar': 1}; value['bar'];",
+            Some(SAFE_MODE),
+            &[],
+        );
+
+        assert!(code.contains("const value={'_0x0':1};"), "{code}");
+        assert!(code.contains("value['_0x0'];"), "{code}");
+    }
+
+    #[test]
+    fn missing_mode_defaults_to_safe_mode() {
+        let code = transform(
+            "const value = {'foo': 1, 'bar': 2}; const excluded = 'foo'; value.foo; value.bar;",
+            None,
+            &[],
+        );
+
+        assert!(code.contains("'foo':1"), "{code}");
+        assert!(code.contains("'_0x0':2"), "{code}");
+        assert!(code.contains("value.foo;"), "{code}");
+        assert!(code.contains("value._0x0;"), "{code}");
     }
 }
