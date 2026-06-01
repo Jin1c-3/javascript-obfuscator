@@ -120,6 +120,9 @@ pub fn apply_transforms(
             force_transform_strings: options.force_transform_strings.as_deref().unwrap_or(&[]),
             ignore_imports: options.ignore_imports.unwrap_or(false),
             wrappers_count: options.string_array_wrappers_count.unwrap_or(0),
+            wrappers_parameters_max_count: options
+                .string_array_wrappers_parameters_max_count
+                .unwrap_or(2),
             wrappers_type: options.string_array_wrappers_type.unwrap_or_default(),
         },
     );

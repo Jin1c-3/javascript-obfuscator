@@ -33,6 +33,7 @@ pub struct StringArrayTransformOptions<'a> {
     pub force_transform_strings: &'a [String],
     pub ignore_imports: bool,
     pub wrappers_count: usize,
+    pub wrappers_parameters_max_count: usize,
     pub wrappers_type: StringArrayWrappersType,
 }
 
@@ -41,7 +42,11 @@ pub fn transform_string_array(program: &mut Program, options: StringArrayTransfo
         return;
     }
 
-    let wrapper_names = root_variable_wrapper_names(options.wrappers_count, options.wrappers_type);
+    let wrappers = root_call_wrappers(
+        options.wrappers_count,
+        options.wrappers_type,
+        options.wrappers_parameters_max_count,
+    );
     let force_transform_patterns =
         compile_force_transform_patterns(options.force_transform_strings);
     let mut transform = StringArrayTransform {
@@ -55,7 +60,7 @@ pub fn transform_string_array(program: &mut Program, options: StringArrayTransfo
         reserved_string_patterns: compile_patterns(options.reserved_strings),
         force_transform_patterns,
         ignore_imports: options.ignore_imports,
-        wrapper_names,
+        wrappers,
         next_wrapper_index: 0,
         used_wrapper_count: 0,
     };
@@ -70,8 +75,8 @@ pub fn transform_string_array(program: &mut Program, options: StringArrayTransfo
     let index_type = transform.index_type;
     let encoding = options.encoding;
     let wrapper_enabled = should_emit_string_array_wrapper(options.index_shift, encoding);
-    let wrapper_names = transform.used_wrapper_names();
-    let active_call_wrapper_names = active_string_array_calls_wrapper_names(&wrapper_names);
+    let wrappers = transform.used_wrappers();
+    let active_call_wrappers = active_string_array_call_wrappers(&wrappers);
     let mut values = transform.values;
 
     if options.shuffle {
@@ -82,7 +87,7 @@ pub fn transform_string_array(program: &mut Program, options: StringArrayTransfo
             index_type,
             options.index_shift,
             wrapper_enabled,
-            &active_call_wrapper_names,
+            &active_call_wrappers,
             &index_remap,
         );
     }
@@ -95,7 +100,7 @@ pub fn transform_string_array(program: &mut Program, options: StringArrayTransfo
             index_type,
             options.index_shift,
             wrapper_enabled,
-            &active_call_wrapper_names,
+            &active_call_wrappers,
             &index_remap,
         );
     }
@@ -106,7 +111,7 @@ pub fn transform_string_array(program: &mut Program, options: StringArrayTransfo
         values,
         options.index_shift,
         encoding,
-        &wrapper_names,
+        &wrappers,
     );
 }
 
@@ -114,6 +119,21 @@ pub fn transform_string_array(program: &mut Program, options: StringArrayTransfo
 struct StringArrayValue {
     encoded_value: String,
     decode_key: Option<&'static str>,
+}
+
+#[derive(Clone)]
+struct StringArrayCallWrapper {
+    name: String,
+    kind: StringArrayCallWrapperKind,
+    index_shift: usize,
+    parameters_count: usize,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum StringArrayCallWrapperKind {
+    Root,
+    Variable,
+    Function,
 }
 
 struct StringArrayTransform {
@@ -127,7 +147,7 @@ struct StringArrayTransform {
     reserved_string_patterns: Vec<Regex>,
     force_transform_patterns: Vec<Regex>,
     ignore_imports: bool,
-    wrapper_names: Vec<String>,
+    wrappers: Vec<StringArrayCallWrapper>,
     next_wrapper_index: usize,
     used_wrapper_count: usize,
 }
@@ -175,10 +195,10 @@ impl VisitMut for StringArrayTransform {
         }
 
         let (index, decode_key) = self.get_or_insert_value(value);
-        let wrapper_name = self.next_string_array_calls_wrapper_name();
+        let wrapper = self.next_string_array_calls_wrapper();
         *expression = create_string_array_reference_expression(
             self.storage_name,
-            &wrapper_name,
+            &wrapper,
             index,
             self.index_type,
             self.encoding,
@@ -202,20 +222,20 @@ impl StringArrayTransform {
         (index, decode_key)
     }
 
-    fn next_string_array_calls_wrapper_name(&mut self) -> String {
-        if self.wrapper_names.is_empty() {
-            return SHIFTED_WRAPPER_NAME.to_string();
+    fn next_string_array_calls_wrapper(&mut self) -> StringArrayCallWrapper {
+        if self.wrappers.is_empty() {
+            return root_string_array_call_wrapper();
         }
 
-        let wrapper_index = self.next_wrapper_index % self.wrapper_names.len();
+        let wrapper_index = self.next_wrapper_index % self.wrappers.len();
         self.next_wrapper_index += 1;
         self.used_wrapper_count = self.used_wrapper_count.max(wrapper_index + 1);
 
-        self.wrapper_names[wrapper_index].clone()
+        self.wrappers[wrapper_index].clone()
     }
 
-    fn used_wrapper_names(&self) -> Vec<String> {
-        self.wrapper_names
+    fn used_wrappers(&self) -> Vec<StringArrayCallWrapper> {
+        self.wrappers
             .iter()
             .take(self.used_wrapper_count)
             .cloned()
@@ -228,7 +248,7 @@ struct StringArrayIndexRemapTransform<'a> {
     index_type: StringArrayIndexesType,
     index_shift_enabled: bool,
     wrapper_enabled: bool,
-    call_wrapper_names: &'a [String],
+    call_wrappers: &'a [StringArrayCallWrapper],
     index_remap: &'a [usize],
 }
 
@@ -265,11 +285,15 @@ impl StringArrayIndexRemapTransform<'_> {
     }
 
     fn remap_call_expression(&self, call_expression: &mut CallExpr) {
-        if !self.wrapper_enabled
-            || !is_identifier_callee_one_of(call_expression, self.call_wrapper_names)
-        {
+        if !self.wrapper_enabled {
             return;
         }
+
+        let Some(call_wrapper) =
+            string_array_call_wrapper_for_call(call_expression, self.call_wrappers)
+        else {
+            return;
+        };
 
         let Some(first_argument) = call_expression.args.first_mut() else {
             return;
@@ -277,13 +301,16 @@ impl StringArrayIndexRemapTransform<'_> {
         let Some(encoded_index) = index_from_literal(first_argument.expr.as_ref()) else {
             return;
         };
+        let Some(root_wrapper_index) = encoded_index.checked_sub(call_wrapper.index_shift) else {
+            return;
+        };
         let old_index = if self.index_shift_enabled {
-            let Some(unshifted_index) = encoded_index.checked_sub(INDEX_SHIFT_AMOUNT) else {
+            let Some(unshifted_index) = root_wrapper_index.checked_sub(INDEX_SHIFT_AMOUNT) else {
                 return;
             };
             unshifted_index
         } else {
-            encoded_index
+            root_wrapper_index
         };
         let Some(new_index) = self.remapped_index(old_index) else {
             return;
@@ -294,7 +321,8 @@ impl StringArrayIndexRemapTransform<'_> {
             new_index
         };
 
-        *first_argument.expr = create_index_literal(remapped_index, self.index_type);
+        *first_argument.expr =
+            create_index_literal(remapped_index + call_wrapper.index_shift, self.index_type);
     }
 
     fn remapped_index(&self, old_index: usize) -> Option<usize> {
@@ -337,7 +365,7 @@ fn remap_string_array_indexes(
     index_type: StringArrayIndexesType,
     index_shift_enabled: bool,
     wrapper_enabled: bool,
-    call_wrapper_names: &[String],
+    call_wrappers: &[StringArrayCallWrapper],
     index_remap: &[usize],
 ) {
     program.visit_mut_with(&mut StringArrayIndexRemapTransform {
@@ -345,7 +373,7 @@ fn remap_string_array_indexes(
         index_type,
         index_shift_enabled,
         wrapper_enabled,
-        call_wrapper_names,
+        call_wrappers,
         index_remap,
     });
 }
@@ -356,7 +384,7 @@ fn insert_string_array_declarations(
     values: Vec<StringArrayValue>,
     index_shift_enabled: bool,
     encoding: StringArrayEncoding,
-    wrapper_names: &[String],
+    wrappers: &[StringArrayCallWrapper],
 ) {
     let mut statements = vec![create_storage_statement(storage_name, values)];
 
@@ -368,9 +396,11 @@ fn insert_string_array_declarations(
             index_shift_enabled,
             encoding,
         ));
-        statements.extend(wrapper_names.iter().map(|wrapper_name| {
-            create_variable_wrapper_statement(wrapper_name, SHIFTED_WRAPPER_NAME)
-        }));
+        statements.extend(
+            wrappers
+                .iter()
+                .map(create_string_array_call_wrapper_statement),
+        );
     }
 
     match program {
@@ -463,25 +493,131 @@ fn create_variable_wrapper_statement(wrapper_name: &str, root_wrapper_name: &str
     })))
 }
 
-fn root_variable_wrapper_names(
+fn create_string_array_call_wrapper_statement(wrapper: &StringArrayCallWrapper) -> Stmt {
+    match wrapper.kind {
+        StringArrayCallWrapperKind::Variable => {
+            create_variable_wrapper_statement(&wrapper.name, SHIFTED_WRAPPER_NAME)
+        }
+        StringArrayCallWrapperKind::Function => create_function_wrapper_statement(wrapper),
+        StringArrayCallWrapperKind::Root => {
+            unreachable!("root wrapper is emitted separately from scope call wrappers")
+        }
+    }
+}
+
+fn create_function_wrapper_statement(wrapper: &StringArrayCallWrapper) -> Stmt {
+    let parameters: Vec<Param> = function_wrapper_parameter_names(wrapper.parameters_count)
+        .into_iter()
+        .map(|name| create_parameter(&name))
+        .collect();
+    let index_argument = create_sub_expression(
+        Expr::Ident(create_identifier("index")),
+        create_number_literal(wrapper.index_shift),
+    );
+
+    Stmt::Decl(Decl::Fn(FnDecl {
+        ident: create_identifier(&wrapper.name),
+        declare: false,
+        function: Box::new(Function {
+            params: parameters,
+            decorators: Vec::new(),
+            span: DUMMY_SP,
+            ctxt: Default::default(),
+            body: Some(BlockStmt {
+                span: DUMMY_SP,
+                ctxt: Default::default(),
+                stmts: vec![create_return_statement(Expr::Call(CallExpr {
+                    span: DUMMY_SP,
+                    ctxt: Default::default(),
+                    callee: Callee::Expr(Box::new(Expr::Ident(create_identifier(
+                        SHIFTED_WRAPPER_NAME,
+                    )))),
+                    args: vec![
+                        create_expr_or_spread(index_argument),
+                        create_expr_or_spread(Expr::Ident(create_identifier("key"))),
+                    ],
+                    type_args: None,
+                }))],
+            }),
+            is_generator: false,
+            is_async: false,
+            type_params: None,
+            return_type: None,
+        }),
+    }))
+}
+
+fn function_wrapper_parameter_names(parameters_count: usize) -> Vec<String> {
+    let mut parameter_names = vec!["index".to_string(), "key".to_string()];
+
+    parameter_names.extend((0..parameters_count.saturating_sub(2)).map(|index| {
+        if index == 0 {
+            "unused0".to_string()
+        } else {
+            format!("unused{index}")
+        }
+    }));
+
+    parameter_names.truncate(parameters_count.max(2));
+    parameter_names
+}
+
+fn create_parameter(name: &str) -> Param {
+    Param {
+        span: DUMMY_SP,
+        decorators: Vec::new(),
+        pat: Pat::Ident(BindingIdent {
+            id: create_identifier(name),
+            type_ann: None,
+        }),
+    }
+}
+
+fn root_call_wrappers(
     wrappers_count: usize,
     wrappers_type: StringArrayWrappersType,
-) -> Vec<String> {
-    if wrappers_type != StringArrayWrappersType::Variable {
-        return Vec::new();
-    }
-
+    wrappers_parameters_max_count: usize,
+) -> Vec<StringArrayCallWrapper> {
     (0..wrappers_count)
-        .map(|index| format!("_0x{}", index + 2))
+        .map(|index| StringArrayCallWrapper {
+            name: format!("_0x{}", index + 2),
+            kind: string_array_call_wrapper_kind(wrappers_type),
+            index_shift: if wrappers_type == StringArrayWrappersType::Function {
+                index + 1
+            } else {
+                0
+            },
+            parameters_count: wrappers_parameters_max_count.max(2),
+        })
         .collect()
 }
 
-fn active_string_array_calls_wrapper_names(wrapper_names: &[String]) -> Vec<String> {
-    if wrapper_names.is_empty() {
-        return vec![SHIFTED_WRAPPER_NAME.to_string()];
+fn string_array_call_wrapper_kind(
+    wrappers_type: StringArrayWrappersType,
+) -> StringArrayCallWrapperKind {
+    match wrappers_type {
+        StringArrayWrappersType::Function => StringArrayCallWrapperKind::Function,
+        StringArrayWrappersType::Variable => StringArrayCallWrapperKind::Variable,
+    }
+}
+
+fn active_string_array_call_wrappers(
+    wrappers: &[StringArrayCallWrapper],
+) -> Vec<StringArrayCallWrapper> {
+    if wrappers.is_empty() {
+        return vec![root_string_array_call_wrapper()];
     }
 
-    wrapper_names.to_vec()
+    wrappers.to_vec()
+}
+
+fn root_string_array_call_wrapper() -> StringArrayCallWrapper {
+    StringArrayCallWrapper {
+        name: SHIFTED_WRAPPER_NAME.to_string(),
+        kind: StringArrayCallWrapperKind::Root,
+        index_shift: 0,
+        parameters_count: 2,
+    }
 }
 
 fn first_index_type(index_types: &[StringArrayIndexesType]) -> StringArrayIndexesType {
@@ -583,7 +719,7 @@ fn rc4_bytes(input: &[u8], key: &str) -> Vec<u8> {
 
 fn create_string_array_reference_expression(
     storage_name: &str,
-    wrapper_name: &str,
+    wrapper: &StringArrayCallWrapper,
     index: usize,
     index_type: StringArrayIndexesType,
     encoding: StringArrayEncoding,
@@ -596,24 +732,43 @@ fn create_string_array_reference_expression(
         } else {
             index
         };
+        let wrapper_index = wrapper_index + wrapper.index_shift;
 
-        return create_string_array_call_expression(
-            wrapper_name,
-            wrapper_index,
-            index_type,
-            decode_key,
-        );
+        return create_string_array_call_expression(wrapper, wrapper_index, index_type, decode_key);
     }
 
     create_string_array_member_expression(storage_name, index, index_type)
 }
 
 fn create_string_array_call_expression(
-    wrapper_name: &str,
+    wrapper: &StringArrayCallWrapper,
     index: usize,
     index_type: StringArrayIndexesType,
     decode_key: Option<&str>,
 ) -> Expr {
+    let args = match wrapper.kind {
+        StringArrayCallWrapperKind::Function => {
+            create_function_wrapper_call_arguments(index, index_type, decode_key, wrapper)
+        }
+        StringArrayCallWrapperKind::Root | StringArrayCallWrapperKind::Variable => {
+            create_root_wrapper_call_arguments(index, index_type, decode_key)
+        }
+    };
+
+    Expr::Call(CallExpr {
+        span: DUMMY_SP,
+        ctxt: Default::default(),
+        callee: Callee::Expr(Box::new(Expr::Ident(create_identifier(&wrapper.name)))),
+        args,
+        type_args: None,
+    })
+}
+
+fn create_root_wrapper_call_arguments(
+    index: usize,
+    index_type: StringArrayIndexesType,
+    decode_key: Option<&str>,
+) -> Vec<ExprOrSpread> {
     let mut args = vec![create_expr_or_spread(create_index_literal(
         index, index_type,
     ))];
@@ -622,13 +777,32 @@ fn create_string_array_call_expression(
         args.push(create_expr_or_spread(create_string_literal(decode_key)));
     }
 
-    Expr::Call(CallExpr {
-        span: DUMMY_SP,
-        ctxt: Default::default(),
-        callee: Callee::Expr(Box::new(Expr::Ident(create_identifier(wrapper_name)))),
-        args,
-        type_args: None,
-    })
+    args
+}
+
+fn create_function_wrapper_call_arguments(
+    index: usize,
+    index_type: StringArrayIndexesType,
+    decode_key: Option<&str>,
+    wrapper: &StringArrayCallWrapper,
+) -> Vec<ExprOrSpread> {
+    let parameters_count = wrapper.parameters_count.max(2);
+
+    (0..parameters_count)
+        .map(|argument_index| {
+            if argument_index == 0 {
+                return create_expr_or_spread(create_index_literal(index, index_type));
+            }
+
+            if argument_index == 1 {
+                if let Some(decode_key) = decode_key {
+                    return create_expr_or_spread(create_string_literal(decode_key));
+                }
+            }
+
+            create_expr_or_spread(create_index_literal(index + argument_index, index_type))
+        })
+        .collect()
 }
 
 fn create_string_array_member_expression(
@@ -885,10 +1059,13 @@ fn is_identifier_callee(call_expression: &CallExpr, name: &str) -> bool {
     is_identifier_expression(callee_expression.as_ref(), name)
 }
 
-fn is_identifier_callee_one_of(call_expression: &CallExpr, names: &[String]) -> bool {
-    names
+fn string_array_call_wrapper_for_call<'a>(
+    call_expression: &CallExpr,
+    wrappers: &'a [StringArrayCallWrapper],
+) -> Option<&'a StringArrayCallWrapper> {
+    wrappers
         .iter()
-        .any(|name| is_identifier_callee(call_expression, name))
+        .find(|wrapper| is_identifier_callee(call_expression, &wrapper.name))
 }
 
 fn single_quote_raw(value: &str) -> String {
@@ -977,6 +1154,7 @@ mod tests {
                 force_transform_strings: &[],
                 ignore_imports,
                 wrappers_count: 0,
+                wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
             },
         );
@@ -1081,6 +1259,7 @@ mod tests {
                 force_transform_strings: &force_transform_strings,
                 ignore_imports: false,
                 wrappers_count: 0,
+                wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
             },
         );
@@ -1123,6 +1302,7 @@ mod tests {
                 force_transform_strings: &[],
                 ignore_imports: false,
                 wrappers_count: 0,
+                wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
             },
         );
@@ -1152,6 +1332,7 @@ mod tests {
                 force_transform_strings: &force_transform_strings,
                 ignore_imports: false,
                 wrappers_count: 0,
+                wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
             },
         );
@@ -1183,6 +1364,7 @@ mod tests {
                 force_transform_strings: &force_transform_strings,
                 ignore_imports: false,
                 wrappers_count: 0,
+                wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
             },
         );
@@ -1212,6 +1394,7 @@ mod tests {
                 force_transform_strings: &[],
                 ignore_imports: false,
                 wrappers_count: 0,
+                wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
             },
         );
@@ -1244,6 +1427,7 @@ mod tests {
                 force_transform_strings: &[],
                 ignore_imports: false,
                 wrappers_count: 0,
+                wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
             },
         );
@@ -1271,6 +1455,7 @@ mod tests {
                 force_transform_strings: &[],
                 ignore_imports: false,
                 wrappers_count: 0,
+                wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
             },
         );
@@ -1306,6 +1491,7 @@ mod tests {
                 force_transform_strings: &[],
                 ignore_imports: false,
                 wrappers_count: 0,
+                wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
             },
         );
@@ -1342,6 +1528,7 @@ mod tests {
                 force_transform_strings: &[],
                 ignore_imports: false,
                 wrappers_count: 2,
+                wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
             },
         );
@@ -1357,6 +1544,45 @@ mod tests {
         );
         assert!(
             code.contains("const first=_0x2(0x66);const second=_0x3(0x65);const third=_0x2(0x64);"),
+            "{code}"
+        );
+    }
+
+    #[test]
+    fn remaps_root_function_string_array_wrappers_when_shuffle_is_enabled() {
+        let mut parsed_program =
+            parse_program("const first = 'foo'; const second = 'bar'; const third = 'baz';")
+                .expect("source should parse");
+        transform_string_array(
+            &mut parsed_program.program,
+            StringArrayTransformOptions {
+                enabled: true,
+                threshold: 1.0,
+                indexes_type: &[],
+                encoding: StringArrayEncoding::None,
+                index_shift: true,
+                shuffle: true,
+                rotate: false,
+                reserved_strings: &[],
+                force_transform_strings: &[],
+                ignore_imports: false,
+                wrappers_count: 2,
+                wrappers_parameters_max_count: 2,
+                wrappers_type: StringArrayWrappersType::Function,
+            },
+        );
+        let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
+            .expect("code should generate");
+
+        assert!(code.contains("const _0x0=['baz','bar','foo'];"), "{code}");
+        assert!(
+            code.contains(
+                "function _0x2(index,key){return _0x1(index-0x1,key);}function _0x3(index,key){return _0x1(index-0x2,key);}"
+            ),
+            "{code}"
+        );
+        assert!(
+            code.contains("const first=_0x2(0x67,0x66);const second=_0x3(0x67,0x68);const third=_0x2(0x65,0x68);"),
             "{code}"
         );
     }
@@ -1380,6 +1606,7 @@ mod tests {
                 force_transform_strings: &[],
                 ignore_imports: false,
                 wrappers_count: 0,
+                wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
             },
         );
@@ -1415,6 +1642,7 @@ mod tests {
                 force_transform_strings: &[],
                 ignore_imports: false,
                 wrappers_count: 0,
+                wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
             },
         );
@@ -1447,6 +1675,7 @@ mod tests {
                 force_transform_strings: &[],
                 ignore_imports: false,
                 wrappers_count: 0,
+                wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
             },
         );

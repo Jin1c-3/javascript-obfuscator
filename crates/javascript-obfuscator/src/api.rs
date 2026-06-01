@@ -2442,4 +2442,52 @@ mod tests {
         );
         assert_eq!(String::from_utf8_lossy(&output.stdout), "foo|bar|baz\n");
     }
+
+    #[test]
+    fn obfuscate_uses_root_function_string_array_wrappers_when_enabled() {
+        let result = obfuscate(
+            "console.log(['foo', 'bar', 'baz'].join('|'));",
+            Options {
+                compact: Some(true),
+                string_array: Some(true),
+                string_array_threshold: Some(1.0),
+                string_array_wrappers_count: Some(2),
+                string_array_wrappers_parameters_max_count: Some(3),
+                string_array_wrappers_type: Some(crate::options::StringArrayWrappersType::Function),
+                rename_globals: Some(false),
+                property_bracketing: Some(false),
+                unicode_escape_sequence: Some(false),
+                ..Options::default()
+            },
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(
+            result.code.contains(
+                "function _0x2(index,key,unused0){return _0x1(index-0x1,key);}function _0x3(index,key,unused0){return _0x1(index-0x2,key);}"
+            ),
+            "{}",
+            result.code
+        );
+        assert!(
+            result.code.contains(
+                "console.log([_0x2(0x1,0x2,0x3),_0x3(0x3,0x4,0x5),_0x2(0x3,0x4,0x5)].join('|'));"
+            ),
+            "{}",
+            result.code
+        );
+
+        let output = Command::new("node")
+            .arg("-e")
+            .arg(&result.code)
+            .output()
+            .expect("node should execute generated code");
+
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "foo|bar|baz\n");
+    }
 }
