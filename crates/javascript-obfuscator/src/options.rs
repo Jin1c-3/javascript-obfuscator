@@ -43,6 +43,8 @@ pub struct Options {
     #[serde(default)]
     pub string_array_wrappers_type: Option<StringArrayWrappersType>,
     #[serde(default)]
+    pub string_array_wrappers_chained_calls: Option<bool>,
+    #[serde(default)]
     pub transform_object_keys: Option<bool>,
     #[serde(default)]
     pub rename_properties: Option<bool>,
@@ -307,6 +309,21 @@ mod tests {
         assert_eq!(
             options.string_array_wrappers_type,
             Some(StringArrayWrappersType::Variable)
+        );
+    }
+
+    #[test]
+    fn deserializes_string_array_wrappers_chained_calls_option_for_option_compatibility() {
+        let options: Options = serde_json::from_value(json!({
+            "stringArrayWrappersChainedCalls": true
+        }))
+        .expect("string array wrappers chained calls option should deserialize");
+        let serialized_options = serde_json::to_value(&options).expect("options should serialize");
+
+        assert_eq!(options.string_array_wrappers_chained_calls, Some(true));
+        assert_eq!(
+            serialized_options["stringArrayWrappersChainedCalls"],
+            json!(true)
         );
     }
 

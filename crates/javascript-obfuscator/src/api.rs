@@ -2952,6 +2952,95 @@ mod tests {
     }
 
     #[test]
+    fn obfuscate_string_array_chained_variable_wrappers_chain_nested_scope_aliases() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "stringArray": true,
+            "stringArrayIndexShift": false,
+            "stringArrayRotate": false,
+            "stringArrayShuffle": false,
+            "stringArrayThreshold": 1,
+            "stringArrayWrappersChainedCalls": true,
+            "stringArrayWrappersCount": 1,
+            "stringArrayWrappersType": "variable",
+            "unicodeEscapeSequence": false
+        }))
+        .expect("string array chained wrapper options should deserialize");
+        let result = obfuscate(
+            "function outer(){ const first = 'foo'; function inner(){ return 'bar'; } return first + inner(); } console.log(outer());",
+            options,
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(
+            result.code.contains("const _0xscopeWrapper0=_0x2;"),
+            "{}",
+            result.code
+        );
+        assert!(
+            result
+                .code
+                .contains("const _0xscopeWrapper1=_0xscopeWrapper0;"),
+            "{}",
+            result.code
+        );
+        assert!(
+            result.code.contains("_0xscopeWrapper0(0x0)"),
+            "{}",
+            result.code
+        );
+        assert!(
+            result.code.contains("_0xscopeWrapper1(0x1)"),
+            "{}",
+            result.code
+        );
+
+        let output = run_node_source(&result.code);
+
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout), "foobar\n");
+        assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    }
+
+    #[test]
+    fn obfuscate_string_array_chained_variable_wrappers_false_omits_scope_aliases() {
+        let options: Options = serde_json::from_value(json!({
+            "compact": true,
+            "propertyBracketing": false,
+            "renameGlobals": false,
+            "stringArray": true,
+            "stringArrayIndexShift": false,
+            "stringArrayRotate": false,
+            "stringArrayShuffle": false,
+            "stringArrayThreshold": 1,
+            "stringArrayWrappersChainedCalls": false,
+            "stringArrayWrappersCount": 1,
+            "stringArrayWrappersType": "variable",
+            "unicodeEscapeSequence": false
+        }))
+        .expect("string array chained wrapper options should deserialize");
+        let result = obfuscate(
+            "function outer(){ const first = 'foo'; function inner(){ return 'bar'; } return first + inner(); } console.log(outer());",
+            options,
+        )
+        .expect("obfuscation should succeed");
+
+        assert!(!result.code.contains("_0xscopeWrapper"), "{}", result.code);
+        assert!(
+            result.code.contains("const first=_0x2(0x0);"),
+            "{}",
+            result.code
+        );
+        assert!(result.code.contains("return _0x2(0x1);"), "{}", result.code);
+    }
+
+    #[test]
     fn obfuscate_uses_root_function_string_array_wrappers_when_enabled() {
         let result = obfuscate(
             "console.log(['foo', 'bar', 'baz'].join('|'));",

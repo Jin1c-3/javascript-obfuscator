@@ -38,6 +38,7 @@ pub struct StringArrayTransformOptions<'a> {
     pub wrappers_count: usize,
     pub wrappers_parameters_max_count: usize,
     pub wrappers_type: StringArrayWrappersType,
+    pub wrappers_chained_calls: bool,
     pub self_defending: bool,
 }
 
@@ -111,6 +112,13 @@ pub fn transform_string_array(program: &mut Program, options: StringArrayTransfo
 
     if options.calls_transform && options.calls_transform_threshold > 0.0 && wrapper_enabled {
         transform_string_array_calls(program, &active_call_wrappers, wrappers.len());
+    }
+
+    if options.wrappers_chained_calls
+        && options.wrappers_type == StringArrayWrappersType::Variable
+        && !wrappers.is_empty()
+    {
+        transform_string_array_chained_variable_wrappers(program, &active_call_wrappers);
     }
 
     insert_string_array_declarations(
@@ -396,6 +404,123 @@ fn transform_string_array_calls(
         call_wrappers,
         next_storage_index: 2 + used_wrapper_count,
     });
+}
+
+fn transform_string_array_chained_variable_wrappers(
+    program: &mut Program,
+    call_wrappers: &[StringArrayCallWrapper],
+) {
+    let Some(root_wrapper_name) = call_wrappers.first().map(|wrapper| wrapper.name.clone()) else {
+        return;
+    };
+    let active_wrapper_names = call_wrappers
+        .iter()
+        .map(|wrapper| wrapper.name.clone())
+        .collect();
+
+    program.visit_mut_with(&mut StringArrayChainedVariableWrappersTransform {
+        active_wrapper_names,
+        wrapper_stack: vec![root_wrapper_name],
+        next_scope_wrapper_index: 0,
+    });
+}
+
+struct StringArrayChainedVariableWrappersTransform {
+    active_wrapper_names: Vec<String>,
+    wrapper_stack: Vec<String>,
+    next_scope_wrapper_index: usize,
+}
+
+impl VisitMut for StringArrayChainedVariableWrappersTransform {
+    fn visit_mut_function(&mut self, function: &mut Function) {
+        if let Some(body) = &mut function.body {
+            self.transform_block_body(body);
+        }
+    }
+
+    fn visit_mut_arrow_expr(&mut self, arrow_expression: &mut ArrowExpr) {
+        if let BlockStmtOrExpr::BlockStmt(body) = arrow_expression.body.as_mut() {
+            self.transform_block_body(body);
+        } else {
+            arrow_expression.visit_mut_children_with(self);
+        }
+    }
+}
+
+impl StringArrayChainedVariableWrappersTransform {
+    fn transform_block_body(&mut self, body: &mut BlockStmt) {
+        let parent_wrapper_name = self
+            .wrapper_stack
+            .last()
+            .expect("root wrapper should be present")
+            .clone();
+        let scope_wrapper_name = format!("_0xscopeWrapper{}", self.next_scope_wrapper_index);
+        let mut calls_transform = FunctionStringArrayChainedVariableCallsTransform {
+            active_wrapper_names: &self.active_wrapper_names,
+            scope_wrapper_name: &scope_wrapper_name,
+            has_rewritten_call: false,
+        };
+
+        body.visit_mut_with(&mut calls_transform);
+
+        if !calls_transform.has_rewritten_call {
+            body.visit_mut_children_with(self);
+            return;
+        }
+
+        self.next_scope_wrapper_index += 1;
+        insert_scope_wrapper_statement(body, &scope_wrapper_name, &parent_wrapper_name);
+        self.wrapper_stack.push(scope_wrapper_name);
+        body.visit_mut_children_with(self);
+        self.wrapper_stack.pop();
+    }
+}
+
+struct FunctionStringArrayChainedVariableCallsTransform<'a> {
+    active_wrapper_names: &'a [String],
+    scope_wrapper_name: &'a str,
+    has_rewritten_call: bool,
+}
+
+impl VisitMut for FunctionStringArrayChainedVariableCallsTransform<'_> {
+    fn visit_mut_function(&mut self, _function: &mut Function) {}
+
+    fn visit_mut_arrow_expr(&mut self, _arrow_expression: &mut ArrowExpr) {}
+
+    fn visit_mut_call_expr(&mut self, call_expression: &mut CallExpr) {
+        call_expression.visit_mut_children_with(self);
+
+        let Callee::Expr(callee_expression) = &mut call_expression.callee else {
+            return;
+        };
+        let Expr::Ident(identifier) = callee_expression.as_mut() else {
+            return;
+        };
+
+        if !self
+            .active_wrapper_names
+            .iter()
+            .any(|wrapper_name| wrapper_name == identifier.sym.as_ref())
+        {
+            return;
+        }
+
+        *identifier = create_identifier(self.scope_wrapper_name);
+        self.has_rewritten_call = true;
+    }
+}
+
+fn insert_scope_wrapper_statement(
+    body: &mut BlockStmt,
+    scope_wrapper_name: &str,
+    parent_wrapper_name: &str,
+) {
+    let insert_index = first_non_directive_statement_index(&body.stmts);
+
+    body.stmts.insert(
+        insert_index,
+        create_variable_wrapper_statement(scope_wrapper_name, parent_wrapper_name),
+    );
 }
 
 struct StringArrayCallsTransform<'a> {
@@ -1387,6 +1512,7 @@ mod tests {
                 wrappers_count: 0,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
+                wrappers_chained_calls: false,
                 self_defending: false,
             },
         );
@@ -1495,6 +1621,7 @@ mod tests {
                 wrappers_count: 0,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
+                wrappers_chained_calls: false,
                 self_defending: false,
             },
         );
@@ -1541,6 +1668,7 @@ mod tests {
                 wrappers_count: 0,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
+                wrappers_chained_calls: false,
                 self_defending: false,
             },
         );
@@ -1574,6 +1702,7 @@ mod tests {
                 wrappers_count: 0,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
+                wrappers_chained_calls: false,
                 self_defending: false,
             },
         );
@@ -1609,6 +1738,7 @@ mod tests {
                 wrappers_count: 0,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
+                wrappers_chained_calls: false,
                 self_defending: false,
             },
         );
@@ -1642,6 +1772,7 @@ mod tests {
                 wrappers_count: 0,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
+                wrappers_chained_calls: false,
                 self_defending: false,
             },
         );
@@ -1678,6 +1809,7 @@ mod tests {
                 wrappers_count: 0,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
+                wrappers_chained_calls: false,
                 self_defending: false,
             },
         );
@@ -1709,6 +1841,7 @@ mod tests {
                 wrappers_count: 0,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
+                wrappers_chained_calls: false,
                 self_defending: false,
             },
         );
@@ -1748,6 +1881,7 @@ mod tests {
                 wrappers_count: 0,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
+                wrappers_chained_calls: false,
                 self_defending: false,
             },
         );
@@ -1788,6 +1922,7 @@ mod tests {
                 wrappers_count: 2,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
+                wrappers_chained_calls: false,
                 self_defending: false,
             },
         );
@@ -1830,6 +1965,7 @@ mod tests {
                 wrappers_count: 2,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Function,
+                wrappers_chained_calls: false,
                 self_defending: false,
             },
         );
@@ -1872,6 +2008,7 @@ mod tests {
                 wrappers_count: 0,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
+                wrappers_chained_calls: false,
                 self_defending: false,
             },
         );
@@ -1911,6 +2048,7 @@ mod tests {
                 wrappers_count: 0,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
+                wrappers_chained_calls: false,
                 self_defending: false,
             },
         );
@@ -1947,6 +2085,7 @@ mod tests {
                 wrappers_count: 0,
                 wrappers_parameters_max_count: 2,
                 wrappers_type: StringArrayWrappersType::Variable,
+                wrappers_chained_calls: false,
                 self_defending: false,
             },
         );
