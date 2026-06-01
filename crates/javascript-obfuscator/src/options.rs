@@ -24,6 +24,12 @@ pub struct Options {
     pub string_array_encoding: Option<Vec<StringArrayEncoding>>,
     #[serde(default)]
     pub string_array_indexes_type: Option<Vec<StringArrayIndexesType>>,
+    #[serde(default, deserialize_with = "deserialize_optional_usize_floor")]
+    pub string_array_wrappers_count: Option<usize>,
+    #[serde(default, deserialize_with = "deserialize_optional_usize_floor")]
+    pub string_array_wrappers_parameters_max_count: Option<usize>,
+    #[serde(default)]
+    pub string_array_wrappers_type: Option<StringArrayWrappersType>,
     #[serde(default)]
     pub transform_object_keys: Option<bool>,
     #[serde(default)]
@@ -102,6 +108,14 @@ pub enum StringArrayEncoding {
     None,
     Base64,
     Rc4,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StringArrayWrappersType {
+    Function,
+    #[default]
+    Variable,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -255,5 +269,22 @@ mod tests {
 
         assert_eq!(options.rename_properties, Some(true));
         assert_eq!(options.rename_properties_mode, Some("unsafe".to_string()));
+    }
+
+    #[test]
+    fn deserializes_string_array_wrappers_options_for_option_compatibility() {
+        let options: Options = serde_json::from_value(json!({
+            "stringArrayWrappersCount": 2,
+            "stringArrayWrappersParametersMaxCount": 4,
+            "stringArrayWrappersType": "variable"
+        }))
+        .expect("string array wrapper options should deserialize");
+
+        assert_eq!(options.string_array_wrappers_count, Some(2));
+        assert_eq!(options.string_array_wrappers_parameters_max_count, Some(4));
+        assert_eq!(
+            options.string_array_wrappers_type,
+            Some(StringArrayWrappersType::Variable)
+        );
     }
 }

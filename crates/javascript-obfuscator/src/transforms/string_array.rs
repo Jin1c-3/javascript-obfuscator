@@ -10,7 +10,7 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
-use crate::options::{StringArrayEncoding, StringArrayIndexesType};
+use crate::options::{StringArrayEncoding, StringArrayIndexesType, StringArrayWrappersType};
 use crate::parser::parse_program;
 
 const INDEX_SHIFT_AMOUNT: usize = 100;
@@ -32,6 +32,8 @@ pub struct StringArrayTransformOptions<'a> {
     pub reserved_strings: &'a [String],
     pub force_transform_strings: &'a [String],
     pub ignore_imports: bool,
+    pub wrappers_count: usize,
+    pub wrappers_type: StringArrayWrappersType,
 }
 
 pub fn transform_string_array(program: &mut Program, options: StringArrayTransformOptions<'_>) {
@@ -39,6 +41,7 @@ pub fn transform_string_array(program: &mut Program, options: StringArrayTransfo
         return;
     }
 
+    let wrapper_names = root_variable_wrapper_names(options.wrappers_count, options.wrappers_type);
     let force_transform_patterns =
         compile_force_transform_patterns(options.force_transform_strings);
     let mut transform = StringArrayTransform {
@@ -52,6 +55,9 @@ pub fn transform_string_array(program: &mut Program, options: StringArrayTransfo
         reserved_string_patterns: compile_patterns(options.reserved_strings),
         force_transform_patterns,
         ignore_imports: options.ignore_imports,
+        wrapper_names,
+        next_wrapper_index: 0,
+        used_wrapper_count: 0,
     };
 
     program.visit_mut_with(&mut transform);
@@ -64,6 +70,8 @@ pub fn transform_string_array(program: &mut Program, options: StringArrayTransfo
     let index_type = transform.index_type;
     let encoding = options.encoding;
     let wrapper_enabled = should_emit_string_array_wrapper(options.index_shift, encoding);
+    let wrapper_names = transform.used_wrapper_names();
+    let active_call_wrapper_names = active_string_array_calls_wrapper_names(&wrapper_names);
     let mut values = transform.values;
 
     if options.shuffle {
@@ -74,6 +82,7 @@ pub fn transform_string_array(program: &mut Program, options: StringArrayTransfo
             index_type,
             options.index_shift,
             wrapper_enabled,
+            &active_call_wrapper_names,
             &index_remap,
         );
     }
@@ -86,11 +95,19 @@ pub fn transform_string_array(program: &mut Program, options: StringArrayTransfo
             index_type,
             options.index_shift,
             wrapper_enabled,
+            &active_call_wrapper_names,
             &index_remap,
         );
     }
 
-    insert_string_array_declarations(program, storage_name, values, options.index_shift, encoding);
+    insert_string_array_declarations(
+        program,
+        storage_name,
+        values,
+        options.index_shift,
+        encoding,
+        &wrapper_names,
+    );
 }
 
 #[derive(Clone)]
@@ -110,6 +127,9 @@ struct StringArrayTransform {
     reserved_string_patterns: Vec<Regex>,
     force_transform_patterns: Vec<Regex>,
     ignore_imports: bool,
+    wrapper_names: Vec<String>,
+    next_wrapper_index: usize,
+    used_wrapper_count: usize,
 }
 
 impl VisitMut for StringArrayTransform {
@@ -155,8 +175,10 @@ impl VisitMut for StringArrayTransform {
         }
 
         let (index, decode_key) = self.get_or_insert_value(value);
+        let wrapper_name = self.next_string_array_calls_wrapper_name();
         *expression = create_string_array_reference_expression(
             self.storage_name,
+            &wrapper_name,
             index,
             self.index_type,
             self.encoding,
@@ -179,6 +201,26 @@ impl StringArrayTransform {
         self.indexes_by_value.insert(value, index);
         (index, decode_key)
     }
+
+    fn next_string_array_calls_wrapper_name(&mut self) -> String {
+        if self.wrapper_names.is_empty() {
+            return SHIFTED_WRAPPER_NAME.to_string();
+        }
+
+        let wrapper_index = self.next_wrapper_index % self.wrapper_names.len();
+        self.next_wrapper_index += 1;
+        self.used_wrapper_count = self.used_wrapper_count.max(wrapper_index + 1);
+
+        self.wrapper_names[wrapper_index].clone()
+    }
+
+    fn used_wrapper_names(&self) -> Vec<String> {
+        self.wrapper_names
+            .iter()
+            .take(self.used_wrapper_count)
+            .cloned()
+            .collect()
+    }
 }
 
 struct StringArrayIndexRemapTransform<'a> {
@@ -186,6 +228,7 @@ struct StringArrayIndexRemapTransform<'a> {
     index_type: StringArrayIndexesType,
     index_shift_enabled: bool,
     wrapper_enabled: bool,
+    call_wrapper_names: &'a [String],
     index_remap: &'a [usize],
 }
 
@@ -222,7 +265,9 @@ impl StringArrayIndexRemapTransform<'_> {
     }
 
     fn remap_call_expression(&self, call_expression: &mut CallExpr) {
-        if !self.wrapper_enabled || !is_identifier_callee(call_expression, SHIFTED_WRAPPER_NAME) {
+        if !self.wrapper_enabled
+            || !is_identifier_callee_one_of(call_expression, self.call_wrapper_names)
+        {
             return;
         }
 
@@ -292,6 +337,7 @@ fn remap_string_array_indexes(
     index_type: StringArrayIndexesType,
     index_shift_enabled: bool,
     wrapper_enabled: bool,
+    call_wrapper_names: &[String],
     index_remap: &[usize],
 ) {
     program.visit_mut_with(&mut StringArrayIndexRemapTransform {
@@ -299,6 +345,7 @@ fn remap_string_array_indexes(
         index_type,
         index_shift_enabled,
         wrapper_enabled,
+        call_wrapper_names,
         index_remap,
     });
 }
@@ -309,6 +356,7 @@ fn insert_string_array_declarations(
     values: Vec<StringArrayValue>,
     index_shift_enabled: bool,
     encoding: StringArrayEncoding,
+    wrapper_names: &[String],
 ) {
     let mut statements = vec![create_storage_statement(storage_name, values)];
 
@@ -320,6 +368,9 @@ fn insert_string_array_declarations(
             index_shift_enabled,
             encoding,
         ));
+        statements.extend(wrapper_names.iter().map(|wrapper_name| {
+            create_variable_wrapper_statement(wrapper_name, SHIFTED_WRAPPER_NAME)
+        }));
     }
 
     match program {
@@ -392,6 +443,45 @@ fn create_storage_statement(
             definite: false,
         }],
     })))
+}
+
+fn create_variable_wrapper_statement(wrapper_name: &str, root_wrapper_name: &str) -> Stmt {
+    Stmt::Decl(Decl::Var(Box::new(VarDecl {
+        span: DUMMY_SP,
+        ctxt: Default::default(),
+        kind: VarDeclKind::Const,
+        declare: false,
+        decls: vec![VarDeclarator {
+            span: DUMMY_SP,
+            name: Pat::Ident(BindingIdent {
+                id: create_identifier(wrapper_name),
+                type_ann: None,
+            }),
+            init: Some(Box::new(Expr::Ident(create_identifier(root_wrapper_name)))),
+            definite: false,
+        }],
+    })))
+}
+
+fn root_variable_wrapper_names(
+    wrappers_count: usize,
+    wrappers_type: StringArrayWrappersType,
+) -> Vec<String> {
+    if wrappers_type != StringArrayWrappersType::Variable {
+        return Vec::new();
+    }
+
+    (0..wrappers_count)
+        .map(|index| format!("_0x{}", index + 2))
+        .collect()
+}
+
+fn active_string_array_calls_wrapper_names(wrapper_names: &[String]) -> Vec<String> {
+    if wrapper_names.is_empty() {
+        return vec![SHIFTED_WRAPPER_NAME.to_string()];
+    }
+
+    wrapper_names.to_vec()
 }
 
 fn first_index_type(index_types: &[StringArrayIndexesType]) -> StringArrayIndexesType {
@@ -493,6 +583,7 @@ fn rc4_bytes(input: &[u8], key: &str) -> Vec<u8> {
 
 fn create_string_array_reference_expression(
     storage_name: &str,
+    wrapper_name: &str,
     index: usize,
     index_type: StringArrayIndexesType,
     encoding: StringArrayEncoding,
@@ -507,7 +598,7 @@ fn create_string_array_reference_expression(
         };
 
         return create_string_array_call_expression(
-            SHIFTED_WRAPPER_NAME,
+            wrapper_name,
             wrapper_index,
             index_type,
             decode_key,
@@ -794,6 +885,12 @@ fn is_identifier_callee(call_expression: &CallExpr, name: &str) -> bool {
     is_identifier_expression(callee_expression.as_ref(), name)
 }
 
+fn is_identifier_callee_one_of(call_expression: &CallExpr, names: &[String]) -> bool {
+    names
+        .iter()
+        .any(|name| is_identifier_callee(call_expression, name))
+}
+
 fn single_quote_raw(value: &str) -> String {
     let mut escaped = String::new();
 
@@ -879,6 +976,8 @@ mod tests {
                 reserved_strings,
                 force_transform_strings: &[],
                 ignore_imports,
+                wrappers_count: 0,
+                wrappers_type: StringArrayWrappersType::Variable,
             },
         );
         generate_code(&parsed_program.program, parsed_program.source_map, true)
@@ -981,6 +1080,8 @@ mod tests {
                 reserved_strings: &[],
                 force_transform_strings: &force_transform_strings,
                 ignore_imports: false,
+                wrappers_count: 0,
+                wrappers_type: StringArrayWrappersType::Variable,
             },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
@@ -1021,6 +1122,8 @@ mod tests {
                 reserved_strings: &[],
                 force_transform_strings: &[],
                 ignore_imports: false,
+                wrappers_count: 0,
+                wrappers_type: StringArrayWrappersType::Variable,
             },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
@@ -1048,6 +1151,8 @@ mod tests {
                 reserved_strings: &[],
                 force_transform_strings: &force_transform_strings,
                 ignore_imports: false,
+                wrappers_count: 0,
+                wrappers_type: StringArrayWrappersType::Variable,
             },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
@@ -1077,6 +1182,8 @@ mod tests {
                 reserved_strings: &reserved_strings,
                 force_transform_strings: &force_transform_strings,
                 ignore_imports: false,
+                wrappers_count: 0,
+                wrappers_type: StringArrayWrappersType::Variable,
             },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
@@ -1104,6 +1211,8 @@ mod tests {
                 reserved_strings: &[],
                 force_transform_strings: &[],
                 ignore_imports: false,
+                wrappers_count: 0,
+                wrappers_type: StringArrayWrappersType::Variable,
             },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
@@ -1134,6 +1243,8 @@ mod tests {
                 reserved_strings: &[],
                 force_transform_strings: &[],
                 ignore_imports: false,
+                wrappers_count: 0,
+                wrappers_type: StringArrayWrappersType::Variable,
             },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
@@ -1159,6 +1270,8 @@ mod tests {
                 reserved_strings: &[],
                 force_transform_strings: &[],
                 ignore_imports: false,
+                wrappers_count: 0,
+                wrappers_type: StringArrayWrappersType::Variable,
             },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
@@ -1192,6 +1305,8 @@ mod tests {
                 reserved_strings: &[],
                 force_transform_strings: &[],
                 ignore_imports: false,
+                wrappers_count: 0,
+                wrappers_type: StringArrayWrappersType::Variable,
             },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
@@ -1204,6 +1319,44 @@ mod tests {
         );
         assert!(
             code.contains("const first=_0x1(0x65);const second=_0x1(0x64);"),
+            "{code}"
+        );
+    }
+
+    #[test]
+    fn remaps_root_variable_string_array_wrappers_when_shuffle_is_enabled() {
+        let mut parsed_program =
+            parse_program("const first = 'foo'; const second = 'bar'; const third = 'baz';")
+                .expect("source should parse");
+        transform_string_array(
+            &mut parsed_program.program,
+            StringArrayTransformOptions {
+                enabled: true,
+                threshold: 1.0,
+                indexes_type: &[],
+                encoding: StringArrayEncoding::None,
+                index_shift: true,
+                shuffle: true,
+                rotate: false,
+                reserved_strings: &[],
+                force_transform_strings: &[],
+                ignore_imports: false,
+                wrappers_count: 2,
+                wrappers_type: StringArrayWrappersType::Variable,
+            },
+        );
+        let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
+            .expect("code should generate");
+
+        assert!(code.contains("const _0x0=['baz','bar','foo'];"), "{code}");
+        assert!(
+            code.contains(
+                "function _0x1(index){return _0x0[index-0x64];}const _0x2=_0x1;const _0x3=_0x1;"
+            ),
+            "{code}"
+        );
+        assert!(
+            code.contains("const first=_0x2(0x66);const second=_0x3(0x65);const third=_0x2(0x64);"),
             "{code}"
         );
     }
@@ -1226,6 +1379,8 @@ mod tests {
                 reserved_strings: &[],
                 force_transform_strings: &[],
                 ignore_imports: false,
+                wrappers_count: 0,
+                wrappers_type: StringArrayWrappersType::Variable,
             },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
@@ -1259,6 +1414,8 @@ mod tests {
                 reserved_strings: &[],
                 force_transform_strings: &[],
                 ignore_imports: false,
+                wrappers_count: 0,
+                wrappers_type: StringArrayWrappersType::Variable,
             },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
@@ -1289,6 +1446,8 @@ mod tests {
                 reserved_strings: &[],
                 force_transform_strings: &[],
                 ignore_imports: false,
+                wrappers_count: 0,
+                wrappers_type: StringArrayWrappersType::Variable,
             },
         );
         let code = generate_code(&parsed_program.program, parsed_program.source_map, true)
