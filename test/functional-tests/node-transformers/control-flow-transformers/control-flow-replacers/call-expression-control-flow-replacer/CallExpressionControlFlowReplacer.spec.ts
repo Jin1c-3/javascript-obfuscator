@@ -124,6 +124,7 @@ describe('CallExpressionControlFlowReplacer', function () {
             const controlFlowStorageNodeRegExp: RegExp = new RegExp(
                 `` +
                     `'\\w{5}' *: *function *\\(${variableMatch}, *\.\.\.${variableMatch}\\) *\\{` +
+                    `${variableMatch} *;` +
                     `return *${variableMatch}\\(\.\.\.${variableMatch}\\);` +
                     `\\}` +
                     ``
@@ -157,6 +158,7 @@ describe('CallExpressionControlFlowReplacer', function () {
             const controlFlowStorageNodeRegExp: RegExp = new RegExp(
                 `` +
                     `'\\w{5}' *: *function *\\(${variableMatch}, *${variableMatch}, *\.\.\.${variableMatch}\\) *\\{` +
+                    `${variableMatch} *;` +
                     `return *${variableMatch}\\(${variableMatch}, *\.\.\.${variableMatch}\\);` +
                     `\\}` +
                     ``
@@ -190,6 +192,7 @@ describe('CallExpressionControlFlowReplacer', function () {
             const controlFlowStorageNodeRegExp: RegExp = new RegExp(
                 `` +
                     `'\\w{5}' *: *function *\\(${variableMatch}, *${variableMatch}, *\.\.\.${variableMatch}\\) *\\{` +
+                    `${variableMatch} *;` +
                     `return *${variableMatch}\\(${variableMatch}, *\.\.\.${variableMatch}\\);` +
                     `\\}` +
                     ``
@@ -223,6 +226,7 @@ describe('CallExpressionControlFlowReplacer', function () {
             const controlFlowStorageNodeRegExp: RegExp = new RegExp(
                 `` +
                     `'\\w{5}' *: *function *\\(${variableMatch}, *${variableMatch}, *${variableMatch}\\) *\\{` +
+                    `${variableMatch} *;` +
                     `return *${variableMatch}\\?\\.\\(${variableMatch}, *${variableMatch}\\);` +
                     `\\}` +
                     ``

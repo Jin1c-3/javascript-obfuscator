@@ -53,6 +53,8 @@ export class LogicalExpressionFunctionNode extends AbstractCustomNode {
             NodeFactory.functionExpressionNode(
                 [NodeFactory.identifierNode('x'), NodeFactory.identifierNode('y')],
                 NodeFactory.blockStatementNode([
+                    // See BinaryExpressionFunctionNode: same no-op leading statement, same reason.
+                    NodeFactory.expressionStatementNode(NodeFactory.identifierNode('x')),
                     NodeFactory.returnStatementNode(
                         NodeFactory.logicalExpressionNode(
                             this.operator,

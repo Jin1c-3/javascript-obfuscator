@@ -83,14 +83,30 @@ export class BlockStatementControlFlowFlatteningNode extends AbstractCustomNode 
                 [
                     NodeFactory.variableDeclaratorNode(
                         NodeFactory.identifierNode(controllerIdentifierName),
+                        // The dispatch-order table is emitted reversed and restored with a trailing
+                        // `.reverse()`: `"2|1|3|0".split("|").reverse()` instead of `"0|3|1|2".split("|")`.
+                        // Semantically identical (same array at runtime), but the order is no longer a bare
+                        // `<stringLiteral>.split("|")` — the exact shape structural CFF unflatteners key on
+                        // (webcrack's control-flow-switch demands a `stringLiteral.split("|")` initializer;
+                        // talon's array-driven unflatten reads only a single `.split()`/array literal). The
+                        // order stays a pure constant expression, so a normalizer can fold it back to the
+                        // canonical form and hand the dispatcher to those unflatteners.
                         NodeFactory.callExpressionNode(
                             NodeFactory.memberExpressionNode(
-                                NodeFactory.literalNode(
-                                    this.originalKeysIndexesInShuffledArray.join(StringSeparator.VerticalLine)
+                                NodeFactory.callExpressionNode(
+                                    NodeFactory.memberExpressionNode(
+                                        NodeFactory.literalNode(
+                                            [...this.originalKeysIndexesInShuffledArray]
+                                                .reverse()
+                                                .join(StringSeparator.VerticalLine)
+                                        ),
+                                        NodeFactory.identifierNode('split')
+                                    ),
+                                    [NodeFactory.literalNode(StringSeparator.VerticalLine)]
                                 ),
-                                NodeFactory.identifierNode('split')
+                                NodeFactory.identifierNode('reverse')
                             ),
-                            [NodeFactory.literalNode(StringSeparator.VerticalLine)]
+                            []
                         )
                     )
                 ],

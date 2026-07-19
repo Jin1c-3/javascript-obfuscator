@@ -295,6 +295,7 @@ describe('EvalCallExpressionTransformer', () => {
             `` +
             `var ${variableMatch} *= *\\{` +
             `'\\w{5}' *: *function *\\(${variableMatch}, *${variableMatch}\\) *\\{` +
+            `${variableMatch} *;` +
             `return *${variableMatch} *\\+ *${variableMatch};` +
             `\\}` +
             `\\};` +

@@ -53,6 +53,13 @@ export class BinaryExpressionFunctionNode extends AbstractCustomNode {
             NodeFactory.functionExpressionNode(
                 [NodeFactory.identifierNode('x'), NodeFactory.identifierNode('y')],
                 NodeFactory.blockStatementNode([
+                    // A bare parameter reference before the `return` (call arguments are already
+                    // evaluated, so re-reading `x` here has no effect). Breaks the single-statement
+                    // `function(x,y){return x OP y}` body shape structural control-flow-object
+                    // unflatteners key on (webcrack's `control-flow-object` requires the body to be
+                    // exactly one `return` statement and gives up on any extra leading statement),
+                    // while staying an obviously-prunable no-op for an agent normalizer.
+                    NodeFactory.expressionStatementNode(NodeFactory.identifierNode('x')),
                     NodeFactory.returnStatementNode(
                         NodeFactory.binaryExpressionNode(
                             this.operator,

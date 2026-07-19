@@ -100,6 +100,9 @@ export class CallExpressionFunctionNode extends AbstractCustomNode {
             NodeFactory.functionExpressionNode(
                 [calleeIdentifier, ...params],
                 NodeFactory.blockStatementNode([
+                    // See BinaryExpressionFunctionNode: same no-op leading statement, same reason
+                    // (defeats webcrack's `control-flow-object` on the call-forwarding shape too).
+                    NodeFactory.expressionStatementNode(NodeFactory.identifierNode('callee')),
                     NodeFactory.returnStatementNode(
                         this.isChainExpressionParent
                             ? NodeFactory.chainExpressionNode(<ESTree.ChainElement>callExpression)

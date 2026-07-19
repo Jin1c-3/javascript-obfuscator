@@ -14,6 +14,7 @@ describe('FunctionControlFlowTransformer', function () {
         `` +
         `var ${variableMatch} *= *\\{` +
         `'\\w{5}' *: *function *\\(${variableMatch}, *${variableMatch}\\) *\\{` +
+        `${variableMatch} *;` +
         `return *${variableMatch} *\\+ *${variableMatch};` +
         `\\}` +
         `\\};` +
@@ -22,6 +23,7 @@ describe('FunctionControlFlowTransformer', function () {
         `` +
         `var ${variableMatch} *= *\\{` +
         `'\\w{5}' *: *function *\\(${variableMatch}, *${variableMatch}\\) *\\{` +
+        `${variableMatch} *;` +
         `return *${variableMatch}\\['\\w{5}'\\]\\(${variableMatch}, *${variableMatch}\\);` +
         `\\}` +
         `\\};` +
@@ -96,9 +98,11 @@ describe('FunctionControlFlowTransformer', function () {
             const regexp: RegExp = new RegExp(
                 `var ${variableMatch} *= *\\{` +
                     `'\\w{5}' *: *function *\\(${variableMatch}, *${variableMatch}\\) *\\{` +
+                    `${variableMatch} *;` +
                     `return *${variableMatch} *\\+ *${variableMatch};` +
                     `\\}, *` +
                     `'\\w{5}' *: *function *\\(${variableMatch}, *${variableMatch}\\) *\\{` +
+                    `${variableMatch} *;` +
                     `return *${variableMatch} *- *${variableMatch};` +
                     `\\}` +
                     `\\};`
@@ -148,6 +152,7 @@ describe('FunctionControlFlowTransformer', function () {
             const regExp: RegExp = new RegExp(
                 `var [a-zA-Z]{6} *= *\\{` +
                     `'\\w{5}' *: *function *\\(${variableMatch}, *${variableMatch}\\) *\\{` +
+                    `${variableMatch} *;` +
                     `return *${variableMatch} *\\+ *${variableMatch};` +
                     `\\}` +
                     `\\};`
